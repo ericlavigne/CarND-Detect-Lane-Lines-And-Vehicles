@@ -33,3 +33,62 @@ To help the reviewer examine your work, please save examples of the output from 
 The `challenge_video.mp4` video is an extra (and optional) challenge for you if you want to test your pipeline under somewhat trickier conditions.  The `harder_challenge.mp4` video is another optional challenge and is brutal!
 
 If you're feeling ambitious (again, totally optional though), don't stop there!  We encourage you to go out and take video of your own, calibrate your camera and show us how you would implement this project from scratch!
+
+
+---
+
+Calibrating the Camera
+---
+
+The first step was to calibrate the camera, correcting for distortions. I used
+pictures of chessboard taken from various angles, with the assumptions that
+the chessboard was made up of perfectly aligned grid squares, to characterize
+the lens distortions. I then applied the resulting calibration to the calibration
+images to confirm that all visible distortions had been removed. See the
+calibrate_chessboard function in
+[main.py](https://github.com/ericlavigne/CarND-Advanced-Lane-Lines/blob/master/main.py).
+
+| Original Image          | Undistorted Image                      |
+|:-----------------------:|:--------------------------------------:|
+| ![original image](https://raw.githubusercontent.com/ericlavigne/CarND-Advanced-Lane-Lines/master/camera_cal/calibration1.jpg)          | ![undistorted image](https://raw.githubusercontent.com/ericlavigne/CarND-Advanced-Lane-Lines/master/output_images/calibration_result1.jpg)                         |
+
+Installation
+---
+
+1. Clone the repository
+
+```sh
+git clone https://github.com/ericlavigne/CarND-Advanced-Lane-Lines
+```
+
+2. Download the data set. The classroom has a link to the data set in the "Project Instructions" content. This is a pickled dataset of 32x32 traffic sign images, split into training, validation and test sets. Unzip dataset into project directory.
+
+3. Setup virtualenv.
+
+```sh
+cd CarND-Advanced-Lane-Lines
+virtualenv -p python3 env
+source env/bin/activate
+pip install -r requirements.txt
+deactivate
+```
+
+Running the project
+---
+
+```sh
+cd CarND-Advanced-Lane-Lines
+source env/bin/activate
+python main.py
+deactivate
+```
+
+Installing new library
+---
+
+```sh
+cd CarND-Advanced-Lane-Lines
+source env/bin/activate
+pip freeze > requirements.txt
+deactivate
+```
