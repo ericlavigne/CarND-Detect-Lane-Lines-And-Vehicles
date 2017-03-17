@@ -29,10 +29,17 @@ def calibrate_chessboard():
   for fname in calibration_fnames:
     img = cv2.imread(fname)
     dst = undistort(img, calibration)
-    dst_fname = fname.replace("camera_cal/calibration","output_images/calibration_result")
+    dst_fname = fname.replace("camera_cal/calibration","output_images/chessboard_undistort/")
     cv2.imwrite(dst_fname, dst)
     
   return calibration
 
 calibration = calibrate_chessboard()
 
+test_fnames = glob.glob('test_images/*.jpg')
+
+for fname in test_fnames:
+  img = cv2.imread(fname)
+  dst = undistort(img, calibration)
+  dst_fname = fname.replace("test_images", "output_images/dash_undistort")
+  cv2.imwrite(dst_fname, dst)
