@@ -50,7 +50,7 @@ calibrate_chessboard function in
 
 | Original Image          | Undistorted Image                      |
 |:-----------------------:|:--------------------------------------:|
-| ![original image](https://raw.githubusercontent.com/ericlavigne/CarND-Advanced-Lane-Lines/master/camera_cal/calibration1.jpg)          | ![undistorted image](https://raw.githubusercontent.com/ericlavigne/CarND-Advanced-Lane-Lines/master/output_images/chessboard_undistort/1.jpg)                         |
+| ![original image](https://raw.githubusercontent.com/ericlavigne/CarND-Advanced-Lane-Lines/master/camera_cal/calibration1.jpg)          | ![undistorted image](https://raw.githubusercontent.com/ericlavigne/CarND-Advanced-Lane-Lines/master/output_images/chessboard_undistort/calibration1.jpg)                         |
 
 I applied the same calibration to undistort images from the dashboard camera.
 The effect is subtle - note the difference in shape around the left and right

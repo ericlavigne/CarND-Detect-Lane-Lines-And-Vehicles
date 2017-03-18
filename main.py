@@ -2,9 +2,6 @@ import numpy as np
 import cv2
 import glob
 
-def undistort(img, calibration):
-  return cv2.undistort(img, calibration[0], calibration[1], None, calibration[0])
-
 def calibrate_chessboard():
   objp = np.zeros((6*9,3), np.float32)
   objp[:,:2] = np.mgrid[0:9,0:6].T.reshape(-1,2)
@@ -26,20 +23,27 @@ def calibrate_chessboard():
   ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints,
                                                      calibration_images[0].shape[::-1], None, None)
   calibration = [mtx,dist]
-  for fname in calibration_fnames:
-    img = cv2.imread(fname)
-    dst = undistort(img, calibration)
-    dst_fname = fname.replace("camera_cal/calibration","output_images/chessboard_undistort/")
-    cv2.imwrite(dst_fname, dst)
-    
   return calibration
 
-calibration = calibrate_chessboard()
+def transform_image_files(transformation, src_pattern, dst_dir):
+  src_fpaths = glob.glob(src_pattern)
+  for src_fpath in src_fpaths:
+    img = cv2.imread(src_fpath)
+    dst_img = transformation(img)
+    fname = src_fpath.split('/')[-1]
+    dst_fpath = dst_dir + '/' + fname
+    cv2.imwrite(dst_fpath,dst_img)
 
-test_fnames = glob.glob('test_images/*.jpg')
+def undistort(img, calibration):
+  return cv2.undistort(img, calibration[0], calibration[1], None, calibration[0])
 
-for fname in test_fnames:
-  img = cv2.imread(fname)
-  dst = undistort(img, calibration)
-  dst_fname = fname.replace("test_images", "output_images/dash_undistort")
-  cv2.imwrite(dst_fname, dst)
+def undistort_files(calibration, src_pattern, dst_dir):
+  transform_image_files((lambda x: undistort(x, calibration)), src_pattern, dst_dir)
+
+def main():
+  calibration = calibrate_chessboard()
+  undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
+  undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
+
+if __name__ == '__main__':
+  main()
