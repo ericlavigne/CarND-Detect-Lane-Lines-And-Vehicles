@@ -130,28 +130,33 @@ def compile_model(model):
                 loss='categorical_crossentropy',
                 metrics=['categorical_accuracy'])
 
-tf_one = tf.constant(1.0)
-tf_half = tf.constant(0.5)
+tf_pos_tanh_offset = tf.constant(0.5)
+tf_pos_tanh_scale = tf.constant(0.45)
 
 def tanh_zero_to_one(x):
-  return (tf_one + tf.tanh(x)) * tf_half
+  """Actually [0.05, 0.95] to avoid divide by zero errors"""
+  return (tf.tanh(x) * tf_pos_tanh_scale) + tf_pos_tanh_offset
 
 def create_model():
   """Create neural network model, defining layer architecture."""
   model = Sequential()
   # Convolution2D(output_depth, convolution height, convolution_width, ...)
-  model.add(Convolution2D(10, 5, 5, border_mode='same',
+  model.add(Convolution2D(20, 5, 5, border_mode='same',
             input_shape=(int((crop_max_y - crop_min_y) / scale_factor),
                          int((crop_max_x - crop_min_x) / scale_factor),
                          5)))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
-  model.add(Convolution2D(10, 5, 5, border_mode='same'))
+  model.add(Convolution2D(20, 5, 5, border_mode='same'))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
-  model.add(Convolution2D(10, 5, 5, border_mode='same'))
+  model.add(Convolution2D(20, 5, 5, border_mode='same'))
+  model.add(BatchNormalization())
+  model.add(Activation('tanh'))
+  model.add(Dropout(0.5))
+  model.add(Convolution2D(20, 5, 5, border_mode='same'))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
@@ -166,9 +171,9 @@ def train_model(model, validation_percentage=None, epochs=100):
      examples for validation is supported but not recommended."""
   data = read_training_data()
   if validation_percentage:
-    return model.fit(data['x'], data['y'], nb_epoch=epochs, validation_split = validation_percentage / 100.0)
+    return model.fit(data['x'], data['y'], nb_epoch=epochs, batch_size=1, validation_split = validation_percentage / 100.0)
   else:
-    return model.fit(data['x'], data['y'], nb_epoch=epochs)
+    return model.fit(data['x'], data['y'], nb_epoch=epochs, batch_size=1)
 
 def image_to_lane_lines_mask(img, model, threshold=0.5):
   model_input = preprocess_input_image(img)[None, :, :, :]
@@ -184,7 +189,7 @@ def main():
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   model = create_model()
-  train_model(model, epochs=1)
+  train_model(model, epochs=10)
   model.save_weights('model.h5')
   model.load_weights('model.h5')
   transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
