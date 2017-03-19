@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 from glob import glob
 
-from keras.layers.convolutional import Conv2D
+from keras.layers.convolutional import Convolution2D
 from keras.layers.core import Activation, Dropout
 from keras.layers.normalization import BatchNormalization
 from keras.models import Sequential, model_from_json
@@ -87,7 +87,7 @@ def compile_model(model):
      also need to be applied when loading model from file."""
   model.compile(optimizer='adam',
                 loss='categorical_crossentropy',
-                metrics=['mean_squared_error'])
+                metrics=['categorical_accuracy'])
 
 tf_one = tf.constant(1.0)
 tf_half = tf.constant(0.5)
@@ -99,23 +99,19 @@ def create_model():
   """Create neural network model, defining layer architecture."""
   model = Sequential()
   # Convolution2D(output_depth, convolution height, convolution_width, ...)
-  model.add(Conv2D(24, (5, 5), padding='same', input_shape=(720,1280,3)))
+  model.add(Convolution2D(10, 5, 5, border_mode='same', input_shape=(720,1280,3)))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
-  model.add(Conv2D(24, (5, 5), padding='same'))
+  model.add(Convolution2D(10, 5, 5, border_mode='same'))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
-  model.add(Conv2D(18, (5, 5), padding='same'))
+  model.add(Convolution2D(10, 5, 5, border_mode='same'))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
-  model.add(Conv2D(10, (5, 5), padding='same'))
-  model.add(BatchNormalization())
-  model.add(Activation('tanh'))
-  model.add(Dropout(0.5))
-  model.add(Conv2D(2, (5, 5), padding='same', kernel_regularizer=l2(0.01), activation=tanh_zero_to_one))
+  model.add(Convolution2D(2, 5, 5, border_mode='same', W_regularizer=l2(0.01), activation=tanh_zero_to_one))
 
   compile_model(model)
   return model
@@ -126,32 +122,18 @@ def train_model(model, validation_percentage=None, epochs=100):
      examples for validation is supported but not recommended."""
   data = read_training_data()
   if validation_percentage:
-    return model.fit(data['x'], data['y'], epochs=epochs, validation_split = validation_percentage / 100.0)
+    return model.fit(data['x'], data['y'], nb_epoch=epochs, validation_split = validation_percentage / 100.0)
   else:
-    return model.fit(data['x'], data['y'], epochs=epochs)
-
-def save_model(model,path='model'):
-  """Save model as .h5 and .json files. Specify path without these extensions."""
-  with open(path + '.json', 'w') as arch_file:
-    arch_file.write(model.to_json())
-  model.save_weights(path + '.h5')
-
-def load_model(path='model'):
-  """Load model from .h5 and .json files. Specify path without these extensions."""
-  with open(path + '.json', 'r') as arch_file:
-    model = model_from_json(arch_file.read())
-    compile_model(model)
-    model.load_weights(path + '.h5')
-    return model
+    return model.fit(data['x'], data['y'], nb_epoch=epochs)
 
 def main():
   #calibration = calibrate_chessboard()
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   model = create_model()
-  train_model(model)
-  save_model(model)
-  model = load_model()
+  #train_model(model, epochs=20)
+  #model.save_weights('model.h5')
+  model.load_weights('model.h5')
 
 if __name__ == '__main__':
   main()
