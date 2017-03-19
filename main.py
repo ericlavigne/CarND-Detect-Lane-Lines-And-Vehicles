@@ -77,8 +77,6 @@ scale_factor=2
 def crop_scale_white_balance(img):
   img = img[crop_min_y:crop_max_y, crop_min_x:crop_max_x]
   img = cv2.resize(img, None, fx=(1.0/scale_factor), fy=(1.0/scale_factor),
-                        #(int(img.shape[1] / scale_factor),
-                        # int(img.shape[0] / scale_factor)),
                    interpolation=cv2.INTER_AREA)
   low = np.amin(img)
   high = np.amax(img)
@@ -90,8 +88,6 @@ def uncrop_scale(img):
   if len(img.shape) == 2:
     img = cv2.merge((img,img,img))
   target_shape = (original_max_y,original_max_x, 3)
-  #if len(img.shape) == 2:
-  #  target_shape = (original_max_y, original_max_x, img.shape[2])
   frame = np.zeros(target_shape, dtype="uint8")
   frame[crop_min_y:crop_max_y, crop_min_x:crop_max_x, 0:3] = img
   img = frame
@@ -101,15 +97,6 @@ def preprocess_input_image(img):
   """Normalize to [-0.5,0.5] based on lightest and darkest pixel across all channels"""
   img = crop_scale_white_balance(img)
   img = cv2.GaussianBlur(img, (3,3), 0)
-  b,g,r = cv2.split(img)
-  x = np.zeros_like(b)
-  y = np.zeros_like(b)
-  imax,jmax = b.shape
-  for i in range(imax):
-    for j in range(jmax):
-      x[i][j] = int(i * 253.0 / imax + 0.5)
-      y[i][j] = int(j * 253.0 / jmax + 0.5)
-  img = cv2.merge((b,g,r,x,y))
   return ((img / 253.0) - 0.5).astype(np.float32)
 
 def read_training_data():
@@ -144,7 +131,19 @@ def create_model():
   model.add(Convolution2D(20, 5, 5, border_mode='same',
             input_shape=(int((crop_max_y - crop_min_y) / scale_factor),
                          int((crop_max_x - crop_min_x) / scale_factor),
-                         5)))
+                         3)))
+  model.add(BatchNormalization())
+  model.add(Activation('tanh'))
+  model.add(Dropout(0.5))
+  model.add(Convolution2D(30, 5, 5, border_mode='same'))
+  model.add(BatchNormalization())
+  model.add(Activation('tanh'))
+  model.add(Dropout(0.5))
+  model.add(Convolution2D(30, 5, 5, border_mode='same'))
+  model.add(BatchNormalization())
+  model.add(Activation('tanh'))
+  model.add(Dropout(0.5))
+  model.add(Convolution2D(30, 5, 5, border_mode='same'))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
@@ -152,11 +151,7 @@ def create_model():
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
-  model.add(Convolution2D(20, 5, 5, border_mode='same'))
-  model.add(BatchNormalization())
-  model.add(Activation('tanh'))
-  model.add(Dropout(0.5))
-  model.add(Convolution2D(20, 5, 5, border_mode='same'))
+  model.add(Convolution2D(10, 5, 5, border_mode='same'))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
@@ -171,9 +166,9 @@ def train_model(model, validation_percentage=None, epochs=100):
      examples for validation is supported but not recommended."""
   data = read_training_data()
   if validation_percentage:
-    return model.fit(data['x'], data['y'], nb_epoch=epochs, batch_size=1, validation_split = validation_percentage / 100.0)
+    return model.fit(data['x'], data['y'], nb_epoch=epochs, validation_split = validation_percentage / 100.0)
   else:
-    return model.fit(data['x'], data['y'], nb_epoch=epochs, batch_size=1)
+    return model.fit(data['x'], data['y'], nb_epoch=epochs)
 
 def image_to_lane_lines_mask(img, model, threshold=0.5):
   model_input = preprocess_input_image(img)[None, :, :, :]
@@ -189,7 +184,7 @@ def main():
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   model = create_model()
-  train_model(model, epochs=10)
+  train_model(model, epochs=1000)
   model.save_weights('model.h5')
   model.load_weights('model.h5')
   transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
