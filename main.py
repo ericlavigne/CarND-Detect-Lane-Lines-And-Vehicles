@@ -126,6 +126,15 @@ def train_model(model, validation_percentage=None, epochs=100):
   else:
     return model.fit(data['x'], data['y'], nb_epoch=epochs)
 
+def image_to_lane_lines_mask(img, model, threshold=0.5):
+  model_input = preprocess_input_image(img)[None, :, :, :]
+  model_output = model.predict(model_input, batch_size=1)[0]
+  print("model_output shape is " + str(model_output.shape))
+  lane_line_odds, not_lane_line_odds = cv2.split(model_output)
+  result = np.zeros_like(lane_line_odds)
+  result[lane_line_odds > threshold] = 254
+  return result
+
 def main():
   #calibration = calibrate_chessboard()
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
@@ -134,6 +143,9 @@ def main():
   #train_model(model, epochs=20)
   #model.save_weights('model.h5')
   model.load_weights('model.h5')
+  image_to_lane_lines_mask(cv2.imread('test_images/test1.jpg'), model, threshold=0.5)
+  transform_image_files((lambda img: image_to_lane_lines_mask(img, model, threshold=0.5)),
+                        'test_images/*.jpg', 'output_images/lane_lines')
 
 if __name__ == '__main__':
   main()
