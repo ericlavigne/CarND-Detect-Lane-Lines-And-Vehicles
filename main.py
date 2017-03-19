@@ -65,11 +65,26 @@ def read_training_y_file(fpath):
   normalized[gray > 0] = 1
   return np.stack([normalized, 1 - normalized], axis=-1)
 
-def preprocess_input_image(img):
-  """Normalize to [-0.5,0.5] based on lightest and darkest pixel across all channels"""
+def smooth_and_white_balance(img):
+  img = cv2.GaussianBlur(img, (5,5), 0)
   low = np.amin(img)
   high = np.amax(img)
-  return (((img - low) * 1.0 / (high - low)) - 0.5).astype(np.float32)
+  img = (((img - low + 1.0) * 252.0 / (high - low)) - 0.5).astype(np.uint8)
+  return img
+
+def preprocess_input_image(img):
+  """Normalize to [-0.5,0.5] based on lightest and darkest pixel across all channels"""
+  img = smooth_and_white_balance(img)
+  b,g,r = cv2.split(img)
+  x = np.zeros_like(b)
+  y = np.zeros_like(b)
+  imax,jmax = b.shape
+  for i in range(imax):
+    for j in range(jmax):
+      x[i][j] = int(i * 253.0 / imax + 0.5)
+      y[i][j] = int(j * 253.0 / jmax + 0.5)
+  img = cv2.merge((b,g,r,x,y))
+  return ((img / 253.0) - 0.5).astype(np.float32)
 
 def read_training_data():
   """Returns tuple of input matrix and output matrix (X,y)"""
@@ -99,7 +114,7 @@ def create_model():
   """Create neural network model, defining layer architecture."""
   model = Sequential()
   # Convolution2D(output_depth, convolution height, convolution_width, ...)
-  model.add(Convolution2D(10, 5, 5, border_mode='same', input_shape=(720,1280,3)))
+  model.add(Convolution2D(10, 5, 5, border_mode='same', input_shape=(720,1280,5)))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
@@ -129,7 +144,6 @@ def train_model(model, validation_percentage=None, epochs=100):
 def image_to_lane_lines_mask(img, model, threshold=0.5):
   model_input = preprocess_input_image(img)[None, :, :, :]
   model_output = model.predict(model_input, batch_size=1)[0]
-  print("model_output shape is " + str(model_output.shape))
   lane_line_odds, not_lane_line_odds = cv2.split(model_output)
   result = np.zeros_like(lane_line_odds)
   result[lane_line_odds > threshold] = 254
@@ -140,10 +154,10 @@ def main():
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   model = create_model()
-  #train_model(model, epochs=20)
-  #model.save_weights('model.h5')
+  train_model(model, epochs=1)
+  model.save_weights('model.h5')
   model.load_weights('model.h5')
-  image_to_lane_lines_mask(cv2.imread('test_images/test1.jpg'), model, threshold=0.5)
+  transform_image_files(smooth_and_white_balance, 'test_images/*.jpg', 'output_images/smoothed')
   transform_image_files((lambda img: image_to_lane_lines_mask(img, model, threshold=0.5)),
                         'test_images/*.jpg', 'output_images/lane_lines')
 
