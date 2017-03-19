@@ -179,18 +179,44 @@ def image_to_lane_lines_mask(img, model, threshold=0.5):
   result = uncrop_scale(result)
   return result
 
+def perspective_transform(img):
+  # These points (list of [x,y] pairs) are taken from lane lines
+  # in output_images/dash_undistort/straight_lines2.jpg.
+  src = np.float32(
+          [[609,440], [673,440],
+           [289,670], [1032,670]])
+  # These parameters control both the size and vertical scaling of the image.
+  # Choose a size with sufficient resolution to avoid losing information.
+  # Choose vertical scaling such that curved lane lines are as parallel as possible.
+  dst_delta_x = 744
+  dst_delta_y = int(dst_delta_x * 5)
+  border_x = int(dst_delta_x * 0.6)
+  dst_image_max_y = dst_delta_y
+  dst_image_max_x = int(dst_delta_x + 2 * border_x)
+  # These points represent points in the perspective transformed
+  # image corresponding to the src points taken from the undistorted image.
+  dst = np.float32(
+          [[border_x, 0],            [border_x + dst_delta_x, 0],
+           [border_x, dst_delta_y],  [border_x + dst_delta_x, dst_delta_y]])
+  M = cv2.getPerspectiveTransform(src,dst)
+  img = cv2.warpPerspective(img, M, (dst_image_max_x, dst_image_max_y), flags=cv2.INTER_LINEAR)
+  return img
+
 def main():
   #calibration = calibrate_chessboard()
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
-  model = create_model()
-  train_model(model, epochs=1000)
-  model.save_weights('model.h5')
-  model.load_weights('model.h5')
+  #model = create_model()
+  #train_model(model, epochs=1000)
+  #model.save_weights('model.h5')
+  #model.load_weights('model.h5')
   transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
   transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
-  transform_image_files((lambda img: image_to_lane_lines_mask(img, model, threshold=0.5)),
-                        'test_images/*.jpg', 'output_images/lane_lines')
+  #transform_image_files((lambda img: image_to_lane_lines_mask(img, model, threshold=0.5)),
+  #                      'test_images/*.jpg', 'output_images/lane_lines')
+  transform_image_files(perspective_transform,
+                        'output_images/dash_undistort/*.jpg',
+                        'output_images/birds_eye')
 
 if __name__ == '__main__':
   main()
