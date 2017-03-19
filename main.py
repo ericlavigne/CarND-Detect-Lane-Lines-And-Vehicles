@@ -59,22 +59,48 @@ def read_training_data_paths():
 
 def read_training_y_file(fpath):
   """Read y file and convert to y format: two channels representing lane line and not lane line"""
-  color = cv2.imread(fpath)
-  gray = cv2.cvtColor(color, cv2.COLOR_RGB2GRAY)
-  normalized = np.zeros_like(gray)
-  normalized[gray > 0] = 1
+  img = cv2.imread(fpath)
+  img = crop_scale_white_balance(img)
+  img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+  normalized = np.zeros_like(img)
+  normalized[img > 0] = 1
   return np.stack([normalized, 1 - normalized], axis=-1)
 
-def smooth_and_white_balance(img):
-  img = cv2.GaussianBlur(img, (5,5), 0)
+original_max_x = 1280
+original_max_y = 720
+crop_min_x = 200
+crop_max_x = 1080
+crop_min_y = 420
+crop_max_y = 666
+scale_factor=2
+
+def crop_scale_white_balance(img):
+  img = img[crop_min_y:crop_max_y, crop_min_x:crop_max_x]
+  img = cv2.resize(img, None, fx=(1.0/scale_factor), fy=(1.0/scale_factor),
+                        #(int(img.shape[1] / scale_factor),
+                        # int(img.shape[0] / scale_factor)),
+                   interpolation=cv2.INTER_AREA)
   low = np.amin(img)
   high = np.amax(img)
   img = (((img - low + 1.0) * 252.0 / (high - low)) - 0.5).astype(np.uint8)
   return img
 
+def uncrop_scale(img):
+  img = cv2.resize(img, None, fx=scale_factor, fy=scale_factor)
+  if len(img.shape) == 2:
+    img = cv2.merge((img,img,img))
+  target_shape = (original_max_y,original_max_x, 3)
+  #if len(img.shape) == 2:
+  #  target_shape = (original_max_y, original_max_x, img.shape[2])
+  frame = np.zeros(target_shape, dtype="uint8")
+  frame[crop_min_y:crop_max_y, crop_min_x:crop_max_x, 0:3] = img
+  img = frame
+  return img
+
 def preprocess_input_image(img):
   """Normalize to [-0.5,0.5] based on lightest and darkest pixel across all channels"""
-  img = smooth_and_white_balance(img)
+  img = crop_scale_white_balance(img)
+  img = cv2.GaussianBlur(img, (3,3), 0)
   b,g,r = cv2.split(img)
   x = np.zeros_like(b)
   y = np.zeros_like(b)
@@ -114,7 +140,10 @@ def create_model():
   """Create neural network model, defining layer architecture."""
   model = Sequential()
   # Convolution2D(output_depth, convolution height, convolution_width, ...)
-  model.add(Convolution2D(10, 5, 5, border_mode='same', input_shape=(720,1280,5)))
+  model.add(Convolution2D(10, 5, 5, border_mode='same',
+            input_shape=(int((crop_max_y - crop_min_y) / scale_factor),
+                         int((crop_max_x - crop_min_x) / scale_factor),
+                         5)))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
@@ -147,6 +176,7 @@ def image_to_lane_lines_mask(img, model, threshold=0.5):
   lane_line_odds, not_lane_line_odds = cv2.split(model_output)
   result = np.zeros_like(lane_line_odds)
   result[lane_line_odds > threshold] = 254
+  result = uncrop_scale(result)
   return result
 
 def main():
@@ -157,7 +187,8 @@ def main():
   train_model(model, epochs=1)
   model.save_weights('model.h5')
   model.load_weights('model.h5')
-  transform_image_files(smooth_and_white_balance, 'test_images/*.jpg', 'output_images/smoothed')
+  transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
+  transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
   transform_image_files((lambda img: image_to_lane_lines_mask(img, model, threshold=0.5)),
                         'test_images/*.jpg', 'output_images/lane_lines')
 
