@@ -78,7 +78,7 @@ git clone https://github.com/ericlavigne/CarND-Advanced-Lane-Lines
 cd CarND-Advanced-Lane-Lines
 virtualenv -p python3 env
 source env/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-cpu.txt (or requirements-gpu.txt if CUDA is available)
 deactivate
 ```
 
@@ -98,6 +98,6 @@ Installing new library
 ```sh
 cd CarND-Advanced-Lane-Lines
 source env/bin/activate
-pip freeze > requirements.txt
+pip freeze > requirements.txt (or requirements-gpu.txt if CUDA is available)
 deactivate
 ```
