@@ -180,13 +180,16 @@ def image_to_lane_markings(img, model, threshold=0.5):
   return result
 
 # These parameters control both the size and vertical scaling of the image.
-# Choose a size with sufficient resolution to avoid losing information.
-# Choose vertical scaling such that curved lane lines are as parallel as possible.
+# I chose delta_x based on the width in pixels of the lane lines at the
+# bottom of the image. The lessons indicated that the lanes were about
+# 3.7 meters wide with a visible distance of 30 meters. I've used this
+# information to determine the appropriate value of delta_y as well.
 perspective_delta_x = 744
-perspective_delta_y = int(perspective_delta_x * 5)
+perspective_delta_y = int(perspective_delta_x * 30 / 3.7)
 perspective_border_x = int(perspective_delta_x * 0.6)
 perspective_max_y = perspective_delta_y
 perspective_max_x = int(perspective_delta_x + 2 * perspective_border_x)
+perspective_pixels_per_meter = perspective_delta_x / 3.7
 
 def perspective_transform(img):
   # These points (list of [x,y] pairs) are taken from lane lines
@@ -264,14 +267,67 @@ def convert_lane_heatmap_to_lane_lines_image(img):
   #lines = find_lane_lines(img, prev_left=lines[0], prev_right=lines[1], prev_weight=0.0)
   return draw_lane_lines(lines)
 
+def radius_of_lane_lines(left_lane, right_lane):
+  if left_lane == None or right_lane == None:
+    return None
+  center = (left_lane + right_lane) / 2
+  print("determining radius for " + str(center))
+  if abs(center[0]) < 0.000001:
+    return None
+  radius_pixels = (1 + (2 * center[0] * perspective_max_y + center[1])**2)**1.5 / (-2 * center[0])
+  radius_meters = radius_pixels / perspective_pixels_per_meter
+  print("radius is " + str(radius_pixels) + " pixels or " + str(radius_meters) + " meters.")
+  return radius_meters
+
+def offset_from_lane_center(left_lane, right_lane):
+  if left_lane == None or right_lane == None:
+    return 0.0
+  center = (left_lane + right_lane) / 2
+  lane_offset = center[0] * perspective_max_y**2 + center[1] * perspective_max_y + center[2]
+  car_offset = perspective_max_x / 2.0
+  print("Offset... lane: " + str(lane_offset) + " car: " + str(car_offset))
+  return (car_offset - lane_offset) / perspective_pixels_per_meter
+
+def annotate_original_image(img, markings_img=None, lane_lines=(None,None)):
+  if markings_img != None:
+    markings_pink = np.zeros_like(markings_img)
+    markings_gray = cv2.cvtColor(markings_img, cv2.COLOR_RGB2GRAY)
+    markings_pink[markings_gray > 100] = np.uint8([255,20,147])
+    img = cv2.addWeighted(img, 0.8, markings_pink, 1.0, 0.0)
+  if lane_lines[0] != None and lane_lines[1] != None:
+    radius = radius_of_lane_lines(lane_lines[0], lane_lines[1])
+    offset = offset_from_lane_center(lane_lines[0], lane_lines[1])
+    radius_text = "Curvature: Straight"
+    if radius and abs(radius) > 100 and abs(radius) < 10000:
+      radius_direction = "left"
+      if radius > 0:
+        radius_direction = "right"
+      radius_text = "Curvature radius " + str(100 * int(abs(radius) / 100)) + "m to the " + radius_direction
+    offset_text = "Offset: Center"
+    if abs(offset) > 0.1:
+      offset_direction = "left"
+      if offset > 0:
+        offset_direction = "right"
+      offset_text = "Offset: " + str(int(abs(offset * 10)) / 10.0) + "m to the " + offset_direction
+    cv2.putText(img, radius_text, (100,100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255))
+    cv2.putText(img, offset_text, (100,200), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255))
+  return img
+
+def process_image(img, model, calibration):
+  undistorted = undistort(img, calibration)
+  markings = image_to_lane_markings(undistorted, model, threshold=0.5)
+  birds_eye_markings = perspective_transform(markings)
+  lines = find_lane_lines(birds_eye_markings)
+  return annotate_original_image(undistorted, markings, lines)
+
 def main():
-  #calibration = calibrate_chessboard()
+  calibration = calibrate_chessboard()
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
-  #model = create_model()
+  model = create_model()
   #train_model(model, epochs=1000)
   #model.save_weights('model.h5')
-  #model.load_weights('model.h5')
+  model.load_weights('model.h5')
   #transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
   #transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
   #transform_image_files((lambda img: image_to_lane_markings(img, model, threshold=0.5)),
@@ -282,12 +338,15 @@ def main():
   #undistort_files(calibration,
   #                'output_images/markings/*.jpg',
   #                'output_images/undistort_markings')
-  #transform_image_files(perspective_transform,
-  #                      'output_images/undistort_markings/*.jpg',
-  #                      'output_images/birds_eye_markings')
+  transform_image_files(perspective_transform,
+                        'output_images/undistort_markings/*.jpg',
+                        'output_images/birds_eye_markings')
   transform_image_files(convert_lane_heatmap_to_lane_lines_image,
                         'output_images/birds_eye_markings/*.jpg',
                         'output_images/birds_eye_lines')
+  transform_image_files((lambda img: process_image(img, model, calibration)),
+                        'test_images/*.jpg',
+                        'output_images/final')
 
 if __name__ == '__main__':
   main()
