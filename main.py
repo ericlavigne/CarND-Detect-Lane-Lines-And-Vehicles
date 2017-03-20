@@ -170,7 +170,7 @@ def train_model(model, validation_percentage=None, epochs=100):
   else:
     return model.fit(data['x'], data['y'], nb_epoch=epochs)
 
-def image_to_lane_lines_mask(img, model, threshold=0.5):
+def image_to_lane_markings(img, model, threshold=0.5):
   model_input = preprocess_input_image(img)[None, :, :, :]
   model_output = model.predict(model_input, batch_size=1)[0]
   lane_line_odds, not_lane_line_odds = cv2.split(model_output)
@@ -179,28 +179,90 @@ def image_to_lane_lines_mask(img, model, threshold=0.5):
   result = uncrop_scale(result)
   return result
 
+# These parameters control both the size and vertical scaling of the image.
+# Choose a size with sufficient resolution to avoid losing information.
+# Choose vertical scaling such that curved lane lines are as parallel as possible.
+perspective_delta_x = 744
+perspective_delta_y = int(perspective_delta_x * 5)
+perspective_border_x = int(perspective_delta_x * 0.6)
+perspective_max_y = perspective_delta_y
+perspective_max_x = int(perspective_delta_x + 2 * perspective_border_x)
+
 def perspective_transform(img):
   # These points (list of [x,y] pairs) are taken from lane lines
   # in output_images/dash_undistort/straight_lines2.jpg.
   src = np.float32(
           [[609,440], [673,440],
            [289,670], [1032,670]])
-  # These parameters control both the size and vertical scaling of the image.
-  # Choose a size with sufficient resolution to avoid losing information.
-  # Choose vertical scaling such that curved lane lines are as parallel as possible.
-  dst_delta_x = 744
-  dst_delta_y = int(dst_delta_x * 5)
-  border_x = int(dst_delta_x * 0.6)
-  dst_image_max_y = dst_delta_y
-  dst_image_max_x = int(dst_delta_x + 2 * border_x)
   # These points represent points in the perspective transformed
   # image corresponding to the src points taken from the undistorted image.
   dst = np.float32(
-          [[border_x, 0],            [border_x + dst_delta_x, 0],
-           [border_x, dst_delta_y],  [border_x + dst_delta_x, dst_delta_y]])
+          [[perspective_border_x, 0],
+           [perspective_border_x + perspective_delta_x, 0],
+           [perspective_border_x, perspective_delta_y],
+           [perspective_border_x + perspective_delta_x, perspective_delta_y]])
   M = cv2.getPerspectiveTransform(src,dst)
-  img = cv2.warpPerspective(img, M, (dst_image_max_x, dst_image_max_y), flags=cv2.INTER_LINEAR)
+  img = cv2.warpPerspective(img, M, (perspective_max_x, perspective_max_y), flags=cv2.INTER_LINEAR)
   return img
+
+def find_lane_lines(img, prev_left=None, prev_right=None, prev_weight=0.8):
+  center = np.float32([0.0, 0.0, img.shape[1] / 2.0]) # default of straight line down center
+  if prev_left != None and prev_right != None:
+    center = (prev_left + prev_right) / 2
+  if len(img.shape) == 2:
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+  lane_pixels = img.nonzero()
+  lane_pixels_y = np.array(lane_pixels[0])
+  lane_pixels_x = np.array(lane_pixels[1])
+  left_lane_indices = (lane_pixels_x < (center[0] * lane_pixels_y**2 +
+                                        center[1] * lane_pixels_y +
+                                        center[2])).nonzero()[0]
+  right_lane_indices = (lane_pixels_x > (center[0] * lane_pixels_y**2 +
+                                         center[1] * lane_pixels_y +
+                                         center[2])).nonzero()[0]
+  left_poly = np.float32([0.0, 0.0, perspective_border_x])
+  right_poly = np.float32([0.0, 0.0, perspective_max_x - perspective_border_x])
+  left_lane_y = lane_pixels_y[left_lane_indices]
+  right_lane_y = lane_pixels_y[right_lane_indices]
+  left_lane_x = lane_pixels_x[left_lane_indices]
+  right_lane_x = lane_pixels_x[right_lane_indices]
+  if len(left_lane_indices) > 20 and len(right_lane_indices) > 20:
+    left_y_spread = np.amax(left_lane_y) - np.amin(left_lane_y)
+    right_y_spread = np.amax(right_lane_y) - np.amin(right_lane_y)
+    min_y_spread = min(left_y_spread, right_y_spread)
+    if min_y_spread > 2500:
+      left_poly = np.polyfit(left_lane_y, left_lane_x, 2)
+      right_poly = np.polyfit(right_lane_y, right_lane_x, 2)
+    elif min_y_spread > 800:
+      left_poly[1:3] = np.polyfit(left_lane_y, left_lane_x, 1)
+      right_poly[1:3] = np.polyfit(right_lane_y, right_lane_x, 1)
+    else:
+      left_poly[2] = np.mean(left_lane_x)
+      right_poly[2] = np.mean(right_lane_x)
+  if prev_left != None and prev_right != None:
+    left_poly = ((prev_left * prev_weight) + (left_poly * (1 - prev_weight))) / 2
+    right_poly = ((prev_right * prev_weight) + (right_poly * (1 - prev_weight))) / 2
+  return (left_poly, right_poly)
+
+def draw_lane_lines(lines):
+  img = np.zeros((perspective_max_y,perspective_max_x), dtype="uint8")
+  for line in lines:
+    y = 1
+    prev_x = int(line[0] * y**2 + line[1] * y + line[2])
+    prev_y = y
+    for i in range(perspective_max_y):
+      y = int(perspective_max_y * i / 20)
+      x = int(line[0] * y**2 + line[1] * y + line[2])
+      if x > 0 and x < perspective_max_x:
+        cv2.line(img, (prev_x,prev_y), (x,y), [255,255,255], 15)
+      prev_x = x
+      prev_y = y
+  return img
+
+def convert_lane_heatmap_to_lane_lines_image(img):
+  lines = find_lane_lines(img)
+  #lines = find_lane_lines(img, prev_left=lines[0], prev_right=lines[1], prev_weight=0.0)
+  return draw_lane_lines(lines)
 
 def main():
   #calibration = calibrate_chessboard()
@@ -210,13 +272,22 @@ def main():
   #train_model(model, epochs=1000)
   #model.save_weights('model.h5')
   #model.load_weights('model.h5')
-  transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
-  transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
-  #transform_image_files((lambda img: image_to_lane_lines_mask(img, model, threshold=0.5)),
-  #                      'test_images/*.jpg', 'output_images/lane_lines')
-  transform_image_files(perspective_transform,
-                        'output_images/dash_undistort/*.jpg',
-                        'output_images/birds_eye')
+  #transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
+  #transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
+  #transform_image_files((lambda img: image_to_lane_markings(img, model, threshold=0.5)),
+  #                      'test_images/*.jpg', 'output_images/markings')
+  #transform_image_files(perspective_transform,
+  #                      'output_images/dash_undistort/*.jpg',
+  #                      'output_images/birds_eye')
+  #undistort_files(calibration,
+  #                'output_images/markings/*.jpg',
+  #                'output_images/undistort_markings')
+  #transform_image_files(perspective_transform,
+  #                      'output_images/undistort_markings/*.jpg',
+  #                      'output_images/birds_eye_markings')
+  transform_image_files(convert_lane_heatmap_to_lane_lines_image,
+                        'output_images/birds_eye_markings/*.jpg',
+                        'output_images/birds_eye_lines')
 
 if __name__ == '__main__':
   main()
