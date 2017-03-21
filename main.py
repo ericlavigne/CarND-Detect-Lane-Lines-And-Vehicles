@@ -335,34 +335,34 @@ def save_examples_from_video():
                       s)
 
 def main():
-  #calibration = calibrate_chessboard()
-  #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
-  save_examples_from_video()
-  #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
-  #model = create_model()
-  #train_model(model, epochs=1000)
-  #model.save_weights('model.h5')
+  calibration = calibrate_chessboard()
+  undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
+  #save_examples_from_video()
+  undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
+  model = create_model()
+  train_model(model, epochs=1000)
+  model.save_weights('model.h5')
   #model.load_weights('model.h5')
-  #transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
-  #transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
-  #transform_image_files((lambda img: image_to_lane_markings(img, model, threshold=0.5)),
-  #                      'test_images/*.jpg', 'output_images/markings')
-  #transform_image_files(perspective_transform,
-  #                      'output_images/dash_undistort/*.jpg',
-  #                      'output_images/birds_eye')
-  #undistort_files(calibration,
-  #                'output_images/markings/*.jpg',
-  #                'output_images/undistort_markings')
-  #transform_image_files(perspective_transform,
-  #                      'output_images/undistort_markings/*.jpg',
-  #                      'output_images/birds_eye_markings')
-  #transform_image_files(convert_lane_heatmap_to_lane_lines_image,
-  #                      'output_images/birds_eye_markings/*.jpg',
-  #                      'output_images/birds_eye_lines')
-  #transform_image_files((lambda img: process_image(img, model, calibration)),
-  #                      'test_images/*.jpg',
-  #                      'output_images/final')
-  #process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
+  transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
+  transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
+  transform_image_files((lambda img: image_to_lane_markings(img, model, threshold=0.5)),
+                        'test_images/*.jpg', 'output_images/markings')
+  transform_image_files(perspective_transform,
+                        'output_images/dash_undistort/*.jpg',
+                        'output_images/birds_eye')
+  undistort_files(calibration,
+                  'output_images/markings/*.jpg',
+                  'output_images/undistort_markings')
+  transform_image_files(perspective_transform,
+                        'output_images/undistort_markings/*.jpg',
+                        'output_images/birds_eye_markings')
+  transform_image_files(convert_lane_heatmap_to_lane_lines_image,
+                        'output_images/birds_eye_markings/*.jpg',
+                        'output_images/birds_eye_lines')
+  transform_image_files((lambda img: process_image(img, model, calibration)),
+                        'test_images/*.jpg',
+                        'output_images/final')
+  process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
 
 if __name__ == '__main__':
   main()
