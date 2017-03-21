@@ -327,14 +327,22 @@ def process_video(video_path_in, video_path_out, model, calibration):
   clip_out = clip_in.fl_image(lambda x: process_image(x, model, calibration))
   clip_out.write_videofile(video_path_out, audio=False)
 
+def save_examples_from_video():
+  video1 = VideoFileClip('project_video.mp4')
+  example_seconds = [0,10,20,30,40,50]
+  for s in example_seconds:
+    video1.save_frame('test_images/video1_' + str(int(s+0.5)) + '.jpg',
+                      s)
+
 def main():
-  calibration = calibrate_chessboard()
+  #calibration = calibrate_chessboard()
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
+  save_examples_from_video()
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
-  model = create_model()
+  #model = create_model()
   #train_model(model, epochs=1000)
   #model.save_weights('model.h5')
-  model.load_weights('model.h5')
+  #model.load_weights('model.h5')
   #transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
   #transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
   #transform_image_files((lambda img: image_to_lane_markings(img, model, threshold=0.5)),
@@ -354,7 +362,7 @@ def main():
   #transform_image_files((lambda img: process_image(img, model, calibration)),
   #                      'test_images/*.jpg',
   #                      'output_images/final')
-  process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
+  #process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
 
 if __name__ == '__main__':
   main()
