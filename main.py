@@ -8,6 +8,8 @@ from keras.layers.normalization import BatchNormalization
 from keras.models import Sequential, model_from_json
 from keras.regularizers import l2
 
+from moviepy.editor import VideoFileClip
+
 import tensorflow as tf
 
 def calibrate_chessboard():
@@ -271,12 +273,12 @@ def radius_of_lane_lines(left_lane, right_lane):
   if left_lane == None or right_lane == None:
     return None
   center = (left_lane + right_lane) / 2
-  print("determining radius for " + str(center))
+  #print("determining radius for " + str(center))
   if abs(center[0]) < 0.000001:
     return None
   radius_pixels = (1 + (2 * center[0] * perspective_max_y + center[1])**2)**1.5 / (-2 * center[0])
   radius_meters = radius_pixels / perspective_pixels_per_meter
-  print("radius is " + str(radius_pixels) + " pixels or " + str(radius_meters) + " meters.")
+  #print("radius is " + str(radius_pixels) + " pixels or " + str(radius_meters) + " meters.")
   return radius_meters
 
 def offset_from_lane_center(left_lane, right_lane):
@@ -285,7 +287,7 @@ def offset_from_lane_center(left_lane, right_lane):
   center = (left_lane + right_lane) / 2
   lane_offset = center[0] * perspective_max_y**2 + center[1] * perspective_max_y + center[2]
   car_offset = perspective_max_x / 2.0
-  print("Offset... lane: " + str(lane_offset) + " car: " + str(car_offset))
+  #print("Offset... lane: " + str(lane_offset) + " car: " + str(car_offset))
   return (car_offset - lane_offset) / perspective_pixels_per_meter
 
 def annotate_original_image(img, markings_img=None, lane_lines=(None,None)):
@@ -320,6 +322,11 @@ def process_image(img, model, calibration):
   lines = find_lane_lines(birds_eye_markings)
   return annotate_original_image(undistorted, markings, lines)
 
+def process_video(video_path_in, video_path_out, model, calibration):
+  clip_in = VideoFileClip(video_path_in)
+  clip_out = clip_in.fl_image(lambda x: process_image(x, model, calibration))
+  clip_out.write_videofile(video_path_out, audio=False)
+
 def main():
   calibration = calibrate_chessboard()
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
@@ -338,15 +345,16 @@ def main():
   #undistort_files(calibration,
   #                'output_images/markings/*.jpg',
   #                'output_images/undistort_markings')
-  transform_image_files(perspective_transform,
-                        'output_images/undistort_markings/*.jpg',
-                        'output_images/birds_eye_markings')
-  transform_image_files(convert_lane_heatmap_to_lane_lines_image,
-                        'output_images/birds_eye_markings/*.jpg',
-                        'output_images/birds_eye_lines')
-  transform_image_files((lambda img: process_image(img, model, calibration)),
-                        'test_images/*.jpg',
-                        'output_images/final')
+  #transform_image_files(perspective_transform,
+  #                      'output_images/undistort_markings/*.jpg',
+  #                      'output_images/birds_eye_markings')
+  #transform_image_files(convert_lane_heatmap_to_lane_lines_image,
+  #                      'output_images/birds_eye_markings/*.jpg',
+  #                      'output_images/birds_eye_lines')
+  #transform_image_files((lambda img: process_image(img, model, calibration)),
+  #                      'test_images/*.jpg',
+  #                      'output_images/final')
+  process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
 
 if __name__ == '__main__':
   main()
