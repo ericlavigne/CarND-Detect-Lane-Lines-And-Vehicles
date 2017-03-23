@@ -183,7 +183,7 @@ def image_to_lane_markings(img, model):
 
   x_center = int(lane_line_odds.shape[1] / 2)
 
-  threshold = min(0.5, np.amax(lane_line_odds[:,:x_center]) - 0.1, np.amax(lane_line_odds[:,x_center:]))
+  threshold = min(0.5, np.amax(lane_line_odds[:,:x_center]) - 0.1, np.amax(lane_line_odds[:,x_center:]) - 0.1)
   result = np.zeros_like(lane_line_odds)
   result[lane_line_odds > threshold] = 254
   
