@@ -66,7 +66,7 @@ def read_training_y_file(fpath):
   img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
   normalized = np.zeros_like(img)
   normalized[img > 0] = 1
-  return np.stack([normalized, 1 - normalized], axis=-1)
+  return np.stack([normalized], axis=-1)
 
 original_max_x = 1280
 original_max_y = 720
@@ -112,12 +112,16 @@ def read_training_data():
     Y.append(read_training_y_file(y))
   return {'x': np.stack(X), 'y': np.stack(Y)}
 
+def lane_weighted_crossentropy(y_true, y_pred):
+  """10x higher weight on prediction of lane markings vs background"""
+  return tf.nn.weighted_cross_entropy_with_logits(y_true, y_pred, 10.0)
+
 def compile_model(model):
   """Would be part of create_model, except that same settings
      also need to be applied when loading model from file."""
   model.compile(optimizer='adam',
-                loss='categorical_crossentropy',
-                metrics=['categorical_accuracy'])
+                loss=lane_weighted_crossentropy,
+                metrics=['binary_accuracy', 'binary_crossentropy'])
 
 tf_pos_tanh_offset = tf.constant(0.5)
 tf_pos_tanh_scale = tf.constant(0.45)
@@ -157,7 +161,7 @@ def create_model():
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
-  model.add(Convolution2D(2, 5, 5, border_mode='same', W_regularizer=l2(0.01), activation=tanh_zero_to_one))
+  model.add(Convolution2D(1, 5, 5, border_mode='same', W_regularizer=l2(0.01), activation=tanh_zero_to_one))
 
   compile_model(model)
   return model
@@ -175,7 +179,7 @@ def train_model(model, validation_percentage=None, epochs=100):
 def image_to_lane_markings(img, model, threshold=0.5):
   model_input = preprocess_input_image(img)[None, :, :, :]
   model_output = model.predict(model_input, batch_size=1)[0]
-  lane_line_odds, not_lane_line_odds = cv2.split(model_output)
+  lane_line_odds = cv2.split(model_output)[0]
   result = np.zeros_like(lane_line_odds)
   result[lane_line_odds > threshold] = 254
   result = uncrop_scale(result)
