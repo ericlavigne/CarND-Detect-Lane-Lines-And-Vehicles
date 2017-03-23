@@ -182,8 +182,11 @@ def image_to_lane_markings(img, model):
   lane_line_odds = cv2.split(model_output)[0]
 
   x_center = int(lane_line_odds.shape[1] / 2)
+  threshold = 0.25
+  #threshold = min(np.amax(lane_line_odds[:,:x_center]), np.amax(lane_line_odds[:,x_center:])) * 0.5
+  #distribution = [(lane_line_odds > x).sum() for x in [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]]
+  #print("threshold: " + str(threshold) + " distribution: " + str(distribution))
 
-  threshold = min(0.5, np.amax(lane_line_odds[:,:x_center]) - 0.1, np.amax(lane_line_odds[:,x_center:]) - 0.1)
   result = np.zeros_like(lane_line_odds)
   result[lane_line_odds > threshold] = 254
   
