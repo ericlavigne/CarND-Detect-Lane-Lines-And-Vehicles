@@ -176,12 +176,30 @@ def train_model(model, validation_percentage=None, epochs=100):
   else:
     return model.fit(data['x'], data['y'], nb_epoch=epochs)
 
-def image_to_lane_markings(img, model, threshold=0.5):
+def image_to_lane_markings(img, model):
   model_input = preprocess_input_image(img)[None, :, :, :]
   model_output = model.predict(model_input, batch_size=1)[0]
   lane_line_odds = cv2.split(model_output)[0]
+
+  x_center = int(lane_line_odds.shape[1] / 2)
+
+  threshold = min(0.5, np.amax(lane_line_odds[:,:x_center]) - 0.1, np.amax(lane_line_odds[:,x_center:]))
   result = np.zeros_like(lane_line_odds)
   result[lane_line_odds > threshold] = 254
+  
+  #left_side = lane_line_odds[:,:x_center]
+  #right_side = lane_line_odds[:,x_center:]
+  #left_max_odds = np.amax(left_side)
+  #right_max_odds = np.amax(right_side)
+  #left_threshold = min(0.5, left_max_odds * 0.8)
+  #right_threshold = min(0.5, right_max_odds * 0.8)
+  #left_result = np.zeros_like(left_side)
+  #right_result = np.zeros_like(right_side)
+  #left_result[left_side > left_threshold] = 254
+  #right_result[right_side > right_threshold] = 254
+  #result = np.concatenate([left_side,right_side], axis=1)
+  #print("odds:" + str(lane_line_odds.shape) + " left:" + str(left_result.shape) + " right:" + str(right_result.shape) + " result:" + str(result.shape))
+  
   result = uncrop_scale(result)
   return result
 
@@ -321,7 +339,7 @@ def annotate_original_image(img, markings_img=None, lane_lines=(None,None)):
 
 def process_image(img, model, calibration):
   undistorted = undistort(img, calibration)
-  markings = image_to_lane_markings(undistorted, model, threshold=0.5)
+  markings = image_to_lane_markings(undistorted, model)
   birds_eye_markings = perspective_transform(markings)
   lines = find_lane_lines(birds_eye_markings)
   return annotate_original_image(undistorted, markings, lines)
@@ -344,12 +362,12 @@ def main():
   #save_examples_from_video()
   undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   model = create_model()
-  train_model(model, epochs=1000)
-  model.save_weights('model.h5')
-  #model.load_weights('model.h5')
+  #train_model(model, epochs=1000)
+  #model.save_weights('model.h5')
+  model.load_weights('model.h5')
   transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
   transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
-  transform_image_files((lambda img: image_to_lane_markings(img, model, threshold=0.5)),
+  transform_image_files((lambda img: image_to_lane_markings(img, model)),
                         'test_images/*.jpg', 'output_images/markings')
   transform_image_files(perspective_transform,
                         'output_images/dash_undistort/*.jpg',
