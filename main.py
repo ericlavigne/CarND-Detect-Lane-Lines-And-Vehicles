@@ -182,11 +182,9 @@ def image_to_lane_markings(img, model):
   lane_line_odds = cv2.split(model_output)[0]
 
   x_center = int(lane_line_odds.shape[1] / 2)
-  threshold = 0.25
-  #threshold = min(np.amax(lane_line_odds[:,:x_center]), np.amax(lane_line_odds[:,x_center:])) * 0.5
-  #distribution = [(lane_line_odds > x).sum() for x in [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]]
-  #print("threshold: " + str(threshold) + " distribution: " + str(distribution))
 
+  threshold = 0.25
+  #threshold = min(0.5, np.amax(lane_line_odds[:,:x_center]) - 0.1, np.amax(lane_line_odds[:,x_center:]) - 0.1)
   result = np.zeros_like(lane_line_odds)
   result[lane_line_odds > threshold] = 254
   
@@ -218,12 +216,49 @@ perspective_max_y = perspective_delta_y
 perspective_max_x = int(perspective_delta_x + 2 * perspective_border_x)
 perspective_pixels_per_meter = perspective_delta_x / 3.7
 
-def perspective_transform(img):
+perspective_origin_y_top = 440
+perspective_origin_y_bottom = 670
+perspective_origin_x_top_left = 609
+perspective_origin_x_top_right = 673
+perspective_origin_x_bottom_left = 289
+perspective_origin_x_bottom_right = 1032
+
+perspective_origin_delta_x_bottom = perspective_origin_x_bottom_right - perspective_origin_x_bottom_left
+perspective_origin_delta_x_top = perspective_origin_x_top_right - perspective_origin_x_top_left
+perspective_origin_delta_y = perspective_origin_y_bottom - perspective_origin_y_top
+
+def draw_lines_on_dash(dash_img, lines):
+  max_y_idx = 5
+  points_left = []
+  points_right = []
+  for line_idx in range(2):
+    line = lines[line_idx]
+    for y_idx in range(max_y_idx + 1):
+      portion_bottom_to_top = y_idx * 1.0 / max_y_idx
+      y = perspective_origin_y_bottom - portion_bottom_to_top * perspective_origin_delta_y
+      yp = perspective_delta_y * (1 - portion_bottom_to_top)
+      xp = line[0] * yp**2 + line[1] * yp + line[2]
+      x_portion = (xp - perspective_border_x) / perspective_delta_x
+      x_left = perspective_origin_x_bottom_left + portion_bottom_to_top * (perspective_origin_x_top_left - perspective_origin_x_bottom_left)
+      x_right = perspective_origin_x_bottom_right + portion_bottom_to_top * (perspective_origin_x_top_right - perspective_origin_x_bottom_right)
+      x = x_left + x_portion * (x_right - x_left)
+      if line_idx == 0:
+        points_left.append([x,y])
+      else:
+        points_right.append([x,y])
+  points_right.reverse()
+  points = points_left + points_right
+  img = np.zeros_like(dash_img)
+  cv2.fillPoly(img, np.int_([points]), (0,255,0))
+  res = cv2.addWeighted(dash_img, 1, img, 0.3, 0)
+  return res
+
+def perspective_matrices():
   # These points (list of [x,y] pairs) are taken from lane lines
   # in output_images/dash_undistort/straight_lines2.jpg.
   src = np.float32(
-          [[609,440], [673,440],
-           [289,670], [1032,670]])
+          [[perspective_origin_x_top_left,perspective_origin_y_top],       [perspective_origin_x_top_right,perspective_origin_y_top],
+           [perspective_origin_x_bottom_left,perspective_origin_y_bottom], [perspective_origin_x_bottom_right,perspective_origin_y_bottom]])
   # These points represent points in the perspective transformed
   # image corresponding to the src points taken from the undistorted image.
   dst = np.float32(
@@ -232,6 +267,12 @@ def perspective_transform(img):
            [perspective_border_x, perspective_delta_y],
            [perspective_border_x + perspective_delta_x, perspective_delta_y]])
   M = cv2.getPerspectiveTransform(src,dst)
+  M_inv= cv2.getPerspectiveTransform(dst,src)
+  return (M,M_inv)
+
+M,M_inv = perspective_matrices()
+
+def perspective_transform(img):
   img = cv2.warpPerspective(img, M, (perspective_max_x, perspective_max_y), flags=cv2.INTER_LINEAR)
   return img
 
@@ -338,6 +379,7 @@ def annotate_original_image(img, markings_img=None, lane_lines=(None,None)):
       offset_text = "Offset: " + str(int(abs(offset * 10)) / 10.0) + "m to the " + offset_direction
     cv2.putText(img, radius_text, (100,100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255))
     cv2.putText(img, offset_text, (100,200), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255))
+    img = draw_lines_on_dash(img, lane_lines)
   return img
 
 def process_image(img, model, calibration):
@@ -361,33 +403,33 @@ def save_examples_from_video():
 
 def main():
   calibration = calibrate_chessboard()
-  undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
+  #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
   #save_examples_from_video()
-  undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
+  #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   model = create_model()
   #train_model(model, epochs=1000)
   #model.save_weights('model.h5')
   model.load_weights('model.h5')
-  transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
-  transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
-  transform_image_files((lambda img: image_to_lane_markings(img, model)),
-                        'test_images/*.jpg', 'output_images/markings')
-  transform_image_files(perspective_transform,
-                        'output_images/dash_undistort/*.jpg',
-                        'output_images/birds_eye')
-  undistort_files(calibration,
-                  'output_images/markings/*.jpg',
-                  'output_images/undistort_markings')
-  transform_image_files(perspective_transform,
-                        'output_images/undistort_markings/*.jpg',
-                        'output_images/birds_eye_markings')
-  transform_image_files(convert_lane_heatmap_to_lane_lines_image,
-                        'output_images/birds_eye_markings/*.jpg',
-                        'output_images/birds_eye_lines')
+  #transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
+  #transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
+  #transform_image_files((lambda img: image_to_lane_markings(img, model)),
+  #                      'test_images/*.jpg', 'output_images/markings')
+  #transform_image_files(perspective_transform,
+  #                      'output_images/dash_undistort/*.jpg',
+  #                      'output_images/birds_eye')
+  #undistort_files(calibration,
+  #                'output_images/markings/*.jpg',
+  #                'output_images/undistort_markings')
+  #transform_image_files(perspective_transform,
+  #                      'output_images/undistort_markings/*.jpg',
+  #                      'output_images/birds_eye_markings')
+  #transform_image_files(convert_lane_heatmap_to_lane_lines_image,
+  #                      'output_images/birds_eye_markings/*.jpg',
+  #                      'output_images/birds_eye_lines')
   transform_image_files((lambda img: process_image(img, model, calibration)),
                         'test_images/*.jpg',
                         'output_images/final')
-  process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
+  #process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
 
 if __name__ == '__main__':
   main()
