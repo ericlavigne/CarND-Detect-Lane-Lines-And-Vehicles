@@ -211,7 +211,7 @@ def image_to_lane_markings(img, model):
 # information to determine the appropriate value of delta_y as well.
 perspective_delta_x = 744
 perspective_delta_y = int(perspective_delta_x * 30 / 3.7)
-perspective_border_x = int(perspective_delta_x * 0.6)
+perspective_border_x = int(perspective_delta_x * 0.34)
 perspective_max_y = perspective_delta_y
 perspective_max_x = int(perspective_delta_x + 2 * perspective_border_x)
 perspective_pixels_per_meter = perspective_delta_x / 3.7
@@ -278,6 +278,7 @@ def perspective_transform(img):
 
 def find_lane_lines(img, prev_left=None, prev_right=None, prev_weight=0.8):
   center = np.float32([0.0, 0.0, img.shape[1] / 2.0]) # default of straight line down center
+  center_width = perspective_delta_x * 0.34 # Ignore lane markings near center. Unclear which lane they are part of.
   if prev_left != None and prev_right != None:
     center = (prev_left + prev_right) / 2
   if len(img.shape) == 2:
@@ -285,10 +286,12 @@ def find_lane_lines(img, prev_left=None, prev_right=None, prev_weight=0.8):
   lane_pixels = img.nonzero()
   lane_pixels_y = np.array(lane_pixels[0])
   lane_pixels_x = np.array(lane_pixels[1])
-  left_lane_indices = (lane_pixels_x < (center[0] * lane_pixels_y**2 +
+  left_lane_indices = (lane_pixels_x < (-center_width / 2 +
+                                        center[0] * lane_pixels_y**2 +
                                         center[1] * lane_pixels_y +
                                         center[2])).nonzero()[0]
-  right_lane_indices = (lane_pixels_x > (center[0] * lane_pixels_y**2 +
+  right_lane_indices = (lane_pixels_x > (center_width / 2 +
+                                         center[0] * lane_pixels_y**2 +
                                          center[1] * lane_pixels_y +
                                          center[2])).nonzero()[0]
   left_poly = np.float32([0.0, 0.0, perspective_border_x])
@@ -414,18 +417,18 @@ def main():
   #transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
   #transform_image_files((lambda img: image_to_lane_markings(img, model)),
   #                      'test_images/*.jpg', 'output_images/markings')
-  #transform_image_files(perspective_transform,
-  #                      'output_images/dash_undistort/*.jpg',
-  #                      'output_images/birds_eye')
+  transform_image_files(perspective_transform,
+                        'output_images/dash_undistort/*.jpg',
+                        'output_images/birds_eye')
   #undistort_files(calibration,
   #                'output_images/markings/*.jpg',
   #                'output_images/undistort_markings')
-  #transform_image_files(perspective_transform,
-  #                      'output_images/undistort_markings/*.jpg',
-  #                      'output_images/birds_eye_markings')
-  #transform_image_files(convert_lane_heatmap_to_lane_lines_image,
-  #                      'output_images/birds_eye_markings/*.jpg',
-  #                      'output_images/birds_eye_lines')
+  transform_image_files(perspective_transform,
+                        'output_images/undistort_markings/*.jpg',
+                        'output_images/birds_eye_markings')
+  transform_image_files(convert_lane_heatmap_to_lane_lines_image,
+                        'output_images/birds_eye_markings/*.jpg',
+                        'output_images/birds_eye_lines')
   transform_image_files((lambda img: process_image(img, model, calibration)),
                         'test_images/*.jpg',
                         'output_images/final')
