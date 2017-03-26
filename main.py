@@ -430,22 +430,22 @@ def main():
   #transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
   #transform_image_files((lambda img: image_to_lane_markings(img, model)),
   #                      'test_images/*.jpg', 'output_images/markings')
-  transform_image_files(perspective_transform,
-                        'output_images/dash_undistort/*.jpg',
-                        'output_images/birds_eye')
+  #transform_image_files(perspective_transform,
+  #                      'output_images/dash_undistort/*.jpg',
+  #                      'output_images/birds_eye')
   #undistort_files(calibration,
   #                'output_images/markings/*.jpg',
   #                'output_images/undistort_markings')
-  transform_image_files(perspective_transform,
-                        'output_images/undistort_markings/*.jpg',
-                        'output_images/birds_eye_markings')
-  transform_image_files(convert_lane_heatmap_to_lane_lines_image,
-                        'output_images/birds_eye_markings/*.jpg',
-                        'output_images/birds_eye_lines')
-  transform_image_files(video_processor(model=model,calibration=calibration).process_image,
+  #transform_image_files(perspective_transform,
+  #                      'output_images/undistort_markings/*.jpg',
+  #                      'output_images/birds_eye_markings')
+  #transform_image_files(convert_lane_heatmap_to_lane_lines_image,
+  #                      'output_images/birds_eye_markings/*.jpg',
+  #                      'output_images/birds_eye_lines')
+  transform_image_files(lambda img: video_processor(model=model,calibration=calibration).process_image(img),
                         'test_images/*.jpg',
                         'output_images/final')
-  process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
+  #process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
 
 if __name__ == '__main__':
   main()
