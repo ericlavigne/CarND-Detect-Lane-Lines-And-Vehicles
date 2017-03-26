@@ -440,11 +440,11 @@ class video_processor(object):
     undistorted = undistort(img, self.calibration)
     markings = image_to_lane_markings(undistorted, self.model)
     self.recent_markings.append(markings)
-    if len(self.recent_markings) > 20:
-      self.recent_markings = self.recent_markings[-20:]
+    if len(self.recent_markings) > 30:
+      self.recent_markings = self.recent_markings[-30:]
     combined_markings = np.zeros_like(markings)
-    for recent_marking in self.recent_markings:
-      combined_markings = cv2.addWeighted(combined_markings, 1.0, recent_marking, 1.0, 0.0)
+    for i in np.random.choice(range(len(self.recent_markings)),size=10):
+      combined_markings = cv2.addWeighted(combined_markings, 1.0, self.recent_markings[i], 1.0, 0.0)
     birds_eye_markings = perspective_transform(combined_markings)
     lines = find_lane_lines(birds_eye_markings, prev_left=self.prev_left, prev_right=self.prev_right)
     self.prev_left = lines[0]
