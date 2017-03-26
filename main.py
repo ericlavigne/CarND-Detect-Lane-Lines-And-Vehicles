@@ -280,7 +280,7 @@ def find_lane_lines(img, prev_left=None, prev_right=None, prev_weight=0.8):
   img_center_x = img.shape[1] / 2.0
   center = np.float32([0.0, 0.0, img_center_x]) # default of straight line down center
   lane_line_width = perspective_delta_x * 0.3
-  image_center_width = perspective_delta_x * 0.5
+  image_center_width = perspective_delta_x * 0.75
   lane_center_width = perspective_delta_x * 0.4
   lane_max_width = perspective_delta_x * 1.25
   default_left_poly = np.float32([0.0, 0.0, perspective_border_x])
