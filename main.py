@@ -277,46 +277,86 @@ def perspective_transform(img):
   return img
 
 def find_lane_lines(img, prev_left=None, prev_right=None, prev_weight=0.8):
-  center = np.float32([0.0, 0.0, img.shape[1] / 2.0]) # default of straight line down center
-  center_width = perspective_delta_x * 0.34 # Ignore lane markings near center. Unclear which lane they are part of.
+  img_center_x = img.shape[1] / 2.0
+  center = np.float32([0.0, 0.0, img_center_x]) # default of straight line down center
+  lane_width = perspective_delta_x * 0.3
+  image_center_tolerance = perspective_delta_x * 0.1
+  lane_center_width = perspective_delta_x * 0.4
+  default_left_poly = np.float32([0.0, 0.0, perspective_border_x])
+  default_right_poly = np.float32([0.0, 0.0, perspective_max_x - perspective_border_x])
   if prev_left != None and prev_right != None:
     center = (prev_left + prev_right) / 2
-  if len(img.shape) == 2:
+  if len(img.shape) == 3:
     img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
   lane_pixels = img.nonzero()
   lane_pixels_y = np.array(lane_pixels[0])
   lane_pixels_x = np.array(lane_pixels[1])
-  left_lane_indices = (lane_pixels_x < (-center_width / 2 +
-                                        center[0] * lane_pixels_y**2 +
-                                        center[1] * lane_pixels_y +
-                                        center[2])).nonzero()[0]
-  right_lane_indices = (lane_pixels_x > (center_width / 2 +
+
+  # Starting guess because we'll look for lane marking pixels near that guess.
+  left_poly = prev_left
+  right_poly = prev_right
+  if left_poly is None:
+    left_poly = default_left_poly
+  if right_poly is None:
+    right_poly = default_right_poly
+
+  # Find pixels within lane_uncertainty of the expected lane line positions
+  in_left_lane = (lane_width / 2 >
+                    abs(lane_pixels_x - (left_poly[0] * lane_pixels_y**2 +
+                                         left_poly[1] * lane_pixels_y +
+                                         left_poly[2])))
+  in_right_lane = (lane_width / 2 >
+                     abs(lane_pixels_x - (right_poly[0] * lane_pixels_y**2 +
+                                          right_poly[1] * lane_pixels_y +
+                                          right_poly[2])))
+  left_of_lane_center = lane_pixels_x < (-lane_center_width / 2 +
                                          center[0] * lane_pixels_y**2 +
                                          center[1] * lane_pixels_y +
-                                         center[2])).nonzero()[0]
-  left_poly = np.float32([0.0, 0.0, perspective_border_x])
-  right_poly = np.float32([0.0, 0.0, perspective_max_x - perspective_border_x])
+                                         center[2])
+  right_of_lane_center = lane_pixels_x > (lane_center_width / 2 +
+                                         center[0] * lane_pixels_y**2 +
+                                         center[1] * lane_pixels_y +
+                                         center[2])
+  # We need to find left lane on left and right lane on right.
+  # Allow small deviation due to curving lanes crossing the center.
+  left_side_of_image = lane_pixels_x < (img_center_x + image_center_tolerance)
+  right_side_of_image = lane_pixels_x > (img_center_x - image_center_tolerance)
+  # Criteria for which lane each pixel belongs in
+  left_lane_indices = (in_left_lane & left_side_of_image & left_of_lane_center).nonzero()[0]
+  right_lane_indices = (in_right_lane & right_side_of_image & right_of_lane_center).nonzero()[0]
+  # In case we don't find enough lane pixels in expected place, snap back to default expectation.
+  left_poly = default_left_poly
+  right_poly = default_right_poly
+  # Prepare variables for line fitting.
   left_lane_y = lane_pixels_y[left_lane_indices]
   right_lane_y = lane_pixels_y[right_lane_indices]
   left_lane_x = lane_pixels_x[left_lane_indices]
   right_lane_x = lane_pixels_x[right_lane_indices]
+  # If not enough data, fall back on default value of lines straight ahead.
   if len(left_lane_indices) > 20 and len(right_lane_indices) > 20:
+    # Distance between y-values is strong indicator of how well fitting will work.
     left_y_spread = np.amax(left_lane_y) - np.amin(left_lane_y)
     right_y_spread = np.amax(right_lane_y) - np.amin(right_lane_y)
     min_y_spread = min(left_y_spread, right_y_spread)
-    if min_y_spread > 2500:
+    # With lane pixels at top and bottom, we can fit a parabola.
+    if min_y_spread > 2500 and not (prev_left is None) and not (prev_right is None):
       left_poly = np.polyfit(left_lane_y, left_lane_x, 2)
       right_poly = np.polyfit(right_lane_y, right_lane_x, 2)
+    # With just two lane markings, a line is the best we can do.
     elif min_y_spread > 800:
       left_poly[1:3] = np.polyfit(left_lane_y, left_lane_x, 1)
       right_poly[1:3] = np.polyfit(right_lane_y, right_lane_x, 1)
+    # With only one lane marking, we'll need to assume that the line is vertical.
     else:
       left_poly[2] = np.mean(left_lane_x)
       right_poly[2] = np.mean(right_lane_x)
+  # If previous fits available, we'll apply momentum for smoothness.
   if prev_left != None and prev_right != None:
-    left_poly = ((prev_left * prev_weight) + (left_poly * (1 - prev_weight))) / 2
-    right_poly = ((prev_right * prev_weight) + (right_poly * (1 - prev_weight))) / 2
-  return (left_poly, right_poly)
+    left_poly = ((prev_left * prev_weight) + (left_poly * (1 - prev_weight)))
+    right_poly = ((prev_right * prev_weight) + (right_poly * (1 - prev_weight)))
+    return (left_poly, right_poly)
+  else:
+    return find_lane_lines(img, prev_left=left_poly, prev_right=right_poly, prev_weight=0.0)
 
 def draw_lane_lines(lines):
   img = np.zeros((perspective_max_y,perspective_max_x), dtype="uint8")
@@ -390,6 +430,8 @@ class video_processor(object):
     self.recent_markings = []
     self.model = model
     self.calibration = calibration
+    self.prev_left = None
+    self.prev_right = None
 
   def process_image(self,img):
     undistorted = undistort(img, self.calibration)
@@ -401,7 +443,9 @@ class video_processor(object):
     for recent_marking in self.recent_markings:
       combined_markings = cv2.addWeighted(combined_markings, 1.0, recent_marking, 1.0, 0.0)
     birds_eye_markings = perspective_transform(combined_markings)
-    lines = find_lane_lines(birds_eye_markings)
+    lines = find_lane_lines(birds_eye_markings, prev_left=self.prev_left, prev_right=self.prev_right)
+    self.prev_left = lines[0]
+    self.prev_right = lines[1]
     return annotate_original_image(undistorted, combined_markings, lines)
 
 def process_video(video_path_in, video_path_out, model, calibration):
@@ -439,9 +483,9 @@ def main():
   #transform_image_files(perspective_transform,
   #                      'output_images/undistort_markings/*.jpg',
   #                      'output_images/birds_eye_markings')
-  #transform_image_files(convert_lane_heatmap_to_lane_lines_image,
-  #                      'output_images/birds_eye_markings/*.jpg',
-  #                      'output_images/birds_eye_lines')
+  transform_image_files(convert_lane_heatmap_to_lane_lines_image,
+                        'output_images/birds_eye_markings/*.jpg',
+                        'output_images/birds_eye_lines')
   transform_image_files(lambda img: video_processor(model=model,calibration=calibration).process_image(img),
                         'test_images/*.jpg',
                         'output_images/final')
