@@ -183,7 +183,7 @@ def image_to_lane_markings(img, model):
 
   x_center = int(lane_line_odds.shape[1] / 2)
 
-  threshold = 0.25
+  threshold = 0.35
   #threshold = min(0.5, np.amax(lane_line_odds[:,:x_center]) - 0.1, np.amax(lane_line_odds[:,x_center:]) - 0.1)
   result = np.zeros_like(lane_line_odds)
   result[lane_line_odds > threshold] = 254
@@ -279,9 +279,10 @@ def perspective_transform(img):
 def find_lane_lines(img, prev_left=None, prev_right=None, prev_weight=0.8):
   img_center_x = img.shape[1] / 2.0
   center = np.float32([0.0, 0.0, img_center_x]) # default of straight line down center
-  lane_width = perspective_delta_x * 0.3
-  image_center_tolerance = perspective_delta_x * 0.1
+  lane_line_width = perspective_delta_x * 0.3
+  image_center_width = perspective_delta_x * 0.5
   lane_center_width = perspective_delta_x * 0.4
+  lane_max_width = perspective_delta_x * 1.25
   default_left_poly = np.float32([0.0, 0.0, perspective_border_x])
   default_right_poly = np.float32([0.0, 0.0, perspective_max_x - perspective_border_x])
   if prev_left != None and prev_right != None:
@@ -301,11 +302,11 @@ def find_lane_lines(img, prev_left=None, prev_right=None, prev_weight=0.8):
     right_poly = default_right_poly
 
   # Find pixels within lane_uncertainty of the expected lane line positions
-  in_left_lane = (lane_width / 2 >
+  in_left_lane = (lane_line_width / 2 >
                     abs(lane_pixels_x - (left_poly[0] * lane_pixels_y**2 +
                                          left_poly[1] * lane_pixels_y +
                                          left_poly[2])))
-  in_right_lane = (lane_width / 2 >
+  in_right_lane = (lane_line_width / 2 >
                      abs(lane_pixels_x - (right_poly[0] * lane_pixels_y**2 +
                                           right_poly[1] * lane_pixels_y +
                                           right_poly[2])))
@@ -319,11 +320,13 @@ def find_lane_lines(img, prev_left=None, prev_right=None, prev_weight=0.8):
                                          center[2])
   # We need to find left lane on left and right lane on right.
   # Allow small deviation due to curving lanes crossing the center.
-  left_side_of_image = lane_pixels_x < (img_center_x + image_center_tolerance)
-  right_side_of_image = lane_pixels_x > (img_center_x - image_center_tolerance)
+  left_side_of_image = lane_pixels_x < (img_center_x - image_center_width / 2)
+  right_side_of_image = lane_pixels_x > (img_center_x + image_center_width / 2)
+  near_car = ((lane_pixels_x > (img_center_x - lane_max_width / 2)) &
+              (lane_pixels_x < (img_center_x + lane_max_width / 2)))
   # Criteria for which lane each pixel belongs in
-  left_lane_indices = (in_left_lane & left_side_of_image & left_of_lane_center).nonzero()[0]
-  right_lane_indices = (in_right_lane & right_side_of_image & right_of_lane_center).nonzero()[0]
+  left_lane_indices = (in_left_lane & left_side_of_image & left_of_lane_center & near_car).nonzero()[0]
+  right_lane_indices = (in_right_lane & right_side_of_image & right_of_lane_center & near_car).nonzero()[0]
   # In case we don't find enough lane pixels in expected place, snap back to default expectation.
   left_poly = default_left_poly
   right_poly = default_right_poly
