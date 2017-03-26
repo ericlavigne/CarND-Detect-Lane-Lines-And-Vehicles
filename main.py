@@ -385,16 +385,29 @@ def annotate_original_image(img, markings_img=None, lane_lines=(None,None)):
     img = draw_lines_on_dash(img, lane_lines)
   return img
 
-def process_image(img, model, calibration):
-  undistorted = undistort(img, calibration)
-  markings = image_to_lane_markings(undistorted, model)
-  birds_eye_markings = perspective_transform(markings)
-  lines = find_lane_lines(birds_eye_markings)
-  return annotate_original_image(undistorted, markings, lines)
+class video_processor(object):
+  def __init__(self, model, calibration):
+    self.recent_markings = []
+    self.model = model
+    self.calibration = calibration
+
+  def process_image(self,img):
+    undistorted = undistort(img, self.calibration)
+    markings = image_to_lane_markings(undistorted, self.model)
+    self.recent_markings.append(markings)
+    if len(self.recent_markings) > 20:
+      self.recent_markings = self.recent_markings[-20:]
+    combined_markings = np.zeros_like(markings)
+    for recent_marking in self.recent_markings:
+      combined_markings = cv2.addWeighted(combined_markings, 1.0, recent_marking, 1.0, 0.0)
+    birds_eye_markings = perspective_transform(combined_markings)
+    lines = find_lane_lines(birds_eye_markings)
+    return annotate_original_image(undistorted, combined_markings, lines)
 
 def process_video(video_path_in, video_path_out, model, calibration):
   clip_in = VideoFileClip(video_path_in)
-  clip_out = clip_in.fl_image(lambda x: process_image(x, model, calibration))
+  processor = video_processor(model=model, calibration=calibration)
+  clip_out = clip_in.fl_image(processor.process_image)
   clip_out.write_videofile(video_path_out, audio=False)
 
 def save_examples_from_video():
@@ -429,10 +442,10 @@ def main():
   transform_image_files(convert_lane_heatmap_to_lane_lines_image,
                         'output_images/birds_eye_markings/*.jpg',
                         'output_images/birds_eye_lines')
-  transform_image_files((lambda img: process_image(img, model, calibration)),
+  transform_image_files(video_processor(model=model,calibration=calibration).process_image,
                         'test_images/*.jpg',
                         'output_images/final')
-  #process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
+  process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
 
 if __name__ == '__main__':
   main()
