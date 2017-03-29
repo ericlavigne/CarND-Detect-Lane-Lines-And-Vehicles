@@ -53,7 +53,7 @@ def undistort_files(calibration, src_pattern, dst_dir):
 def read_training_data_paths():
   """Returns {'x': [path1, path2, ...], 'y': [path1, path2, ...]}"""
   x = glob('training/*_x.png')
-  y = glob('training/*_y.png')
+  y = glob('training/*_lanes.png')
   x.sort()
   y.sort()
   assert (len(x) == len(y)), "x and y files don't match"
