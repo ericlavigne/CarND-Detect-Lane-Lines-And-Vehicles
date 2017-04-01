@@ -1,6 +1,6 @@
-import numpy as np
 import cv2
 from glob import glob
+import numpy as np
 
 from keras.layers.convolutional import Convolution2D
 from keras.layers.core import Activation, Dropout
@@ -11,6 +11,12 @@ from keras.regularizers import l2
 from moviepy.editor import VideoFileClip
 
 import tensorflow as tf
+
+def read_image(path):
+  return cv2.cvtColor(cv2.imread(img), cv2.COLOR_BGR2RGB)
+
+def write_image(path,img)
+  cv2.imwrite(path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
 def calibrate_chessboard():
   objp = np.zeros((6*9,3), np.float32)
@@ -23,7 +29,7 @@ def calibrate_chessboard():
   imgpoints = []
   
   for fname in calibration_fnames:
-    img = cv2.imread(fname)
+    img = read_image(fname)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     calibration_images.append(gray)
     ret, corners = cv2.findChessboardCorners(gray, (9,6), None)
@@ -38,11 +44,11 @@ def calibrate_chessboard():
 def transform_image_files(transformation, src_pattern, dst_dir):
   src_fpaths = glob(src_pattern)
   for src_fpath in src_fpaths:
-    img = cv2.imread(src_fpath)
+    img = read_image(src_fpath)
     dst_img = transformation(img)
     fname = src_fpath.split('/')[-1]
     dst_fpath = dst_dir + '/' + fname
-    cv2.imwrite(dst_fpath,dst_img)
+    write_image(dst_fpath,dst_img)
 
 def undistort(img, calibration):
   return cv2.undistort(img, calibration[0], calibration[1], None, calibration[0])
@@ -80,7 +86,7 @@ def read_training_data_paths():
 def read_training_file(fpath,opt):
   """Read (car or lane) annotation file and convert to y format: one channel with
      1 for present or 0 for absent"""
-  img = cv2.imread(fpath)
+  img = read_image(fpath)
   img = crop_scale_white_balance(img,opt)
   img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
   normalized = np.zeros_like(img)
@@ -131,7 +137,7 @@ def read_training_data(opt):
   paths = read_training_data_paths()
   X = []
   for x in paths['x']:
-    X.append(preprocess_input_image(cv2.imread(x), opt))
+    X.append(preprocess_input_image(read_image(x), opt))
   Y = []
   for y in paths[opt['name']]:
     Y.append(read_training_file(y,opt))
