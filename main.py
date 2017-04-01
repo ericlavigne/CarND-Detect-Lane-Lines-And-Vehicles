@@ -131,7 +131,7 @@ def read_training_data(opt):
   paths = read_training_data_paths()
   X = []
   for x in paths['x']:
-    X.append(preprocess_car_input_image(cv2.imread(x)))
+    X.append(preprocess_input_image(cv2.imread(x), opt))
   Y = []
   for y in paths[opt['name']]:
     Y.append(read_training_file(y,opt))
@@ -190,7 +190,7 @@ def create_model(opt):
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
   model.add(Convolution2D(1, 5, 5, border_mode='same', W_regularizer=l2(0.01), activation=tanh_zero_to_one))
-  compile_model(model)
+  compile_model(model, opt)
   return model
 
 def train_model(model, opt, validation_percentage=None, epochs=100):
@@ -489,12 +489,12 @@ def main():
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   
   lane_model = create_model(lane_settings)
-  train_model(lane_model, lane_settings, epochs=100)
+  train_model(lane_model, lane_settings, epochs=1000)
   lane_model.save_weights('models/lanes.h5')
   lane_model.load_weights('models/lanes.h5')
   
   car_model = create_model(car_settings)
-  train_model(car_model, car_settings, epochs=100)
+  train_model(car_model, car_settings, epochs=1000)
   car_model.save_weights('models/cars.h5')
   car_model.load_weights('models/cars.h5')
   
