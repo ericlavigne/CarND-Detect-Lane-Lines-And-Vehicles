@@ -50,77 +50,105 @@ def undistort(img, calibration):
 def undistort_files(calibration, src_pattern, dst_dir):
   transform_image_files((lambda x: undistort(x, calibration)), src_pattern, dst_dir)
 
-def read_training_data_paths():
-  """Returns {'x': [path1, path2, ...], 'y': [path1, path2, ...]}"""
-  x = glob('training/*_x.png')
-  y = glob('training/*_lanes.png')
-  x.sort()
-  y.sort()
-  assert (len(x) == len(y)), "x and y files don't match"
-  return {'x': x, 'y': y}
+lane_settings = {'name': 'lanes',
+                 # previously weight 10.0, threshold 0.35
+                 'presence_weight': 50.0, 'threshold': 0.5,
+                 'original_max_x': 1280, 'original_max_y': 720,
+                 'crop_min_x': 200, 'crop_max_x': 1080,
+                 'crop_min_y': 420, 'crop_max_y': 666,
+                 'scale_factor': 2}
 
-def read_training_y_file(fpath):
-  """Read y file and convert to y format: two channels representing lane line and not lane line"""
+car_settings = {'name': 'cars',
+                'presence_weight': 50.0, 'threshold': 0.5,
+                'original_max_x': 1280, 'original_max_y': 720,
+                'crop_min_x': 0, 'crop_max_x': 1280,
+                'crop_min_y': 420, 'crop_max_y': 666,
+                'scale_factor': 2}
+
+def read_training_data_paths():
+  """Returns {'x': [path1, path2, ...], 'lanes': [path1, path2, ...], 'cars': [path1, path2, ...]}"""
+  x = glob('training/*_x.png')
+  lanes = glob('training/*_lanes.png')
+  cars = glob('training/*_cars.png')
+  x.sort()
+  lanes.sort()
+  cars.sort()
+  assert (len(x) == len(lanes)), "x and lanes files don't match"
+  assert (len(x) == len(cars)), "x and cars files don't match"
+  return {'x': x, 'lanes': lanes, 'cars': cars}
+
+def read_training_file(fpath,opt):
+  """Read (car or lane) annotation file and convert to y format: one channel with
+     1 for present or 0 for absent"""
   img = cv2.imread(fpath)
-  img = crop_scale_white_balance(img)
+  img = crop_scale_white_balance(img,opt)
   img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
   normalized = np.zeros_like(img)
   normalized[img > 0] = 1
   return np.stack([normalized], axis=-1)
 
-original_max_x = 1280
-original_max_y = 720
-crop_min_x = 200
-crop_max_x = 1080
-crop_min_y = 420
-crop_max_y = 666
-scale_factor=2
+def crop(img,opt):
+  return img[opt['crop_min_y']:opt['crop_max_y'], opt['crop_min_x']:opt['crop_max_x']]
 
-def crop_scale_white_balance(img):
-  img = img[crop_min_y:crop_max_y, crop_min_x:crop_max_x]
-  img = cv2.resize(img, None, fx=(1.0/scale_factor), fy=(1.0/scale_factor),
+def uncrop(img,opt):
+  target_shape = (opt['original_max_y'],opt['original_max_x'], 3)
+  frame = np.zeros(target_shape, dtype="uint8")
+  frame[opt['crop_min_y']:opt['crop_max_y'], opt['crop_min_x']:opt['crop_max_x'], 0:3] = img
+  img = frame
+  return img
+
+def scale_white_balance(img,opt):
+  img = cv2.resize(img, None, fx=(1.0/opt['scale_factor']), fy=(1.0/opt['scale_factor']),
                    interpolation=cv2.INTER_AREA)
   low = np.amin(img)
   high = np.amax(img)
   img = (((img - low + 1.0) * 252.0 / (high - low)) - 0.5).astype(np.uint8)
   return img
 
-def uncrop_scale(img):
-  img = cv2.resize(img, None, fx=scale_factor, fy=scale_factor)
+def unscale(img,opt):
+  img = cv2.resize(img, None, fx=opt['scale_factor'], fy=opt['scale_factor'])
   if len(img.shape) == 2:
     img = cv2.merge((img,img,img))
-  target_shape = (original_max_y,original_max_x, 3)
-  frame = np.zeros(target_shape, dtype="uint8")
-  frame[crop_min_y:crop_max_y, crop_min_x:crop_max_x, 0:3] = img
-  img = frame
   return img
 
-def preprocess_input_image(img):
-  """Normalize to [-0.5,0.5] based on lightest and darkest pixel across all channels"""
-  img = crop_scale_white_balance(img)
+def crop_scale_white_balance(img,opt):
+  img = crop(img,opt)
+  img = scale_white_balance(img,opt)
+  return img
+
+def uncrop_scale(img,opt):
+  img = unscale(img,opt)
+  img = uncrop(img,opt)
+  return img
+
+def preprocess_input_image(img,opt):
+  img = crop_scale_white_balance(img,opt)
   img = cv2.GaussianBlur(img, (3,3), 0)
   return ((img / 253.0) - 0.5).astype(np.float32)
 
-def read_training_data():
+def read_training_data(opt):
   """Returns tuple of input matrix and output matrix (X,y)"""
   paths = read_training_data_paths()
   X = []
   for x in paths['x']:
-    X.append(preprocess_input_image(cv2.imread(x)))
+    X.append(preprocess_car_input_image(cv2.imread(x)))
   Y = []
-  for y in paths['y']:
-    Y.append(read_training_y_file(y))
+  for y in paths[opt['name']]:
+    Y.append(read_training_file(y,opt))
   return {'x': np.stack(X), 'y': np.stack(Y)}
 
-def lane_weighted_crossentropy(y_true, y_pred):
-  """10x higher weight on prediction of lane markings vs background"""
-  return tf.nn.weighted_cross_entropy_with_logits(y_true, y_pred, 10.0)
+def weighted_binary_crossentropy(weight):
+  """Higher weights increase the importance of examples in which
+     the correct answer is 1. Higher values should be used when
+     1 is a rare answer. Lower values should be used when 0 is
+     a rare answer."""
+  return (lambda y_true, y_pred: tf.nn.weighted_cross_entropy_with_logits(y_true, y_pred, weight))
 
-def compile_model(model):
+def compile_model(model,opt):
   """Would be part of create_model, except that same settings
      also need to be applied when loading model from file."""
   model.compile(optimizer='adam',
-                loss=lane_weighted_crossentropy,
+                loss=weighted_binary_crossentropy(opt['presence_weight']),
                 metrics=['binary_accuracy', 'binary_crossentropy'])
 
 tf_pos_tanh_offset = tf.constant(0.5)
@@ -130,13 +158,13 @@ def tanh_zero_to_one(x):
   """Actually [0.05, 0.95] to avoid divide by zero errors"""
   return (tf.tanh(x) * tf_pos_tanh_scale) + tf_pos_tanh_offset
 
-def create_model():
+def create_model(opt):
   """Create neural network model, defining layer architecture."""
   model = Sequential()
   # Convolution2D(output_depth, convolution height, convolution_width, ...)
   model.add(Convolution2D(20, 5, 5, border_mode='same',
-            input_shape=(int((crop_max_y - crop_min_y) / scale_factor),
-                         int((crop_max_x - crop_min_x) / scale_factor),
+            input_shape=(int((opt['crop_max_y'] - opt['crop_min_y']) / opt['scale_factor']),
+                         int((opt['crop_max_x'] - opt['crop_min_x']) / opt['scale_factor']),
                          3)))
   model.add(BatchNormalization())
   model.add(Activation('tanh'))
@@ -162,46 +190,29 @@ def create_model():
   model.add(Activation('tanh'))
   model.add(Dropout(0.5))
   model.add(Convolution2D(1, 5, 5, border_mode='same', W_regularizer=l2(0.01), activation=tanh_zero_to_one))
-
   compile_model(model)
   return model
 
-def train_model(model, validation_percentage=None, epochs=100):
+def train_model(model, opt, validation_percentage=None, epochs=100):
   """Train the model. With so few examples, I usually prefer
      to use all examples for training. Setting aside some
      examples for validation is supported but not recommended."""
-  data = read_training_data()
+  data = read_training_data(opt)
   if validation_percentage:
     return model.fit(data['x'], data['y'], nb_epoch=epochs, validation_split = validation_percentage / 100.0)
   else:
     return model.fit(data['x'], data['y'], nb_epoch=epochs)
 
-def image_to_lane_markings(img, model):
-  model_input = preprocess_input_image(img)[None, :, :, :]
+def image_to_prediction(img, model, opt):
+  model_input = preprocess_input_image(img,opt)[None, :, :, :]
   model_output = model.predict(model_input, batch_size=1)[0]
-  lane_line_odds = cv2.split(model_output)[0]
+  odds = cv2.split(model_output)[0]
 
-  x_center = int(lane_line_odds.shape[1] / 2)
-
-  threshold = 0.35
-  #threshold = min(0.5, np.amax(lane_line_odds[:,:x_center]) - 0.1, np.amax(lane_line_odds[:,x_center:]) - 0.1)
-  result = np.zeros_like(lane_line_odds)
-  result[lane_line_odds > threshold] = 254
+  threshold = opt['threshold']
+  result = np.zeros_like(odds)
+  result[odds > threshold] = 254
   
-  #left_side = lane_line_odds[:,:x_center]
-  #right_side = lane_line_odds[:,x_center:]
-  #left_max_odds = np.amax(left_side)
-  #right_max_odds = np.amax(right_side)
-  #left_threshold = min(0.5, left_max_odds * 0.8)
-  #right_threshold = min(0.5, right_max_odds * 0.8)
-  #left_result = np.zeros_like(left_side)
-  #right_result = np.zeros_like(right_side)
-  #left_result[left_side > left_threshold] = 254
-  #right_result[right_side > right_threshold] = 254
-  #result = np.concatenate([left_side,right_side], axis=1)
-  #print("odds:" + str(lane_line_odds.shape) + " left:" + str(left_result.shape) + " right:" + str(right_result.shape) + " result:" + str(result.shape))
-  
-  result = uncrop_scale(result)
+  result = uncrop_scale(result,opt)
   return result
 
 # These parameters control both the size and vertical scaling of the image.
@@ -402,12 +413,17 @@ def offset_from_lane_center(left_lane, right_lane):
   #print("Offset... lane: " + str(lane_offset) + " car: " + str(car_offset))
   return (car_offset - lane_offset) / perspective_pixels_per_meter
 
-def annotate_original_image(img, markings_img=None, lane_lines=(None,None)):
-  if markings_img != None:
-    markings_pink = np.zeros_like(markings_img)
-    markings_gray = cv2.cvtColor(markings_img, cv2.COLOR_RGB2GRAY)
+def annotate_original_image(img, lane_markings_img=None, lane_lines=(None,None), car_img=None):
+  if lane_markings_img != None:
+    markings_pink = np.zeros_like(lane_markings_img)
+    markings_gray = cv2.cvtColor(lane_markings_img, cv2.COLOR_RGB2GRAY)
     markings_pink[markings_gray > 100] = np.uint8([255,20,147])
     img = cv2.addWeighted(img, 0.8, markings_pink, 1.0, 0.0)
+  if car_img != None:
+    car_cyan = np.zeros_like(car_img)
+    car_gray = cv2.cvtColor(car_img, cv2.COLOR_RGB2GRAY)
+    car_cyan[car_gray > 100] = np.uint8([0,255,255])
+    img = cv2.addWeighted(img, 0.8, car_cyan, 1.0, 0.0)
   if lane_lines[0] != None and lane_lines[1] != None:
     radius = radius_of_lane_lines(lane_lines[0], lane_lines[1])
     offset = offset_from_lane_center(lane_lines[0], lane_lines[1])
@@ -429,16 +445,18 @@ def annotate_original_image(img, markings_img=None, lane_lines=(None,None)):
   return img
 
 class video_processor(object):
-  def __init__(self, model, calibration):
+  def __init__(self, lane_model, car_model, calibration):
     self.recent_markings = []
-    self.model = model
+    self.lane_model = lane_model
+    self.car_model = car_model
     self.calibration = calibration
     self.prev_left = None
     self.prev_right = None
 
   def process_image(self,img):
     undistorted = undistort(img, self.calibration)
-    markings = image_to_lane_markings(undistorted, self.model)
+    markings = image_to_prediction(undistorted, self.lane_model, lane_settings)
+    cars = image_to_prediction(undistorted, self.car_model, car_settings)
     self.recent_markings.append(markings)
     if len(self.recent_markings) > 30:
       self.recent_markings = self.recent_markings[-30:]
@@ -449,11 +467,11 @@ class video_processor(object):
     lines = find_lane_lines(birds_eye_markings, prev_left=self.prev_left, prev_right=self.prev_right)
     self.prev_left = lines[0]
     self.prev_right = lines[1]
-    return annotate_original_image(undistorted, combined_markings, lines)
+    return annotate_original_image(undistorted, combined_markings, lines, cars)
 
-def process_video(video_path_in, video_path_out, model, calibration):
+def process_video(video_path_in, video_path_out, lane_model, car_model, calibration):
   clip_in = VideoFileClip(video_path_in)
-  processor = video_processor(model=model, calibration=calibration)
+  processor = video_processor(lane_model=lane_model, car_model=car_model, calibration=calibration)
   clip_out = clip_in.fl_image(processor.process_image)
   clip_out.write_videofile(video_path_out, audio=False)
 
@@ -469,14 +487,23 @@ def main():
   #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
   #save_examples_from_video()
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
-  model = create_model()
-  #train_model(model, epochs=1000)
-  #model.save_weights('model.h5')
-  model.load_weights('model.h5')
-  #transform_image_files(crop_scale_white_balance, 'test_images/*.jpg', 'output_images/cropped')
-  #transform_image_files(uncrop_scale, 'output_images/cropped/*.jpg', 'output_images/uncropped')
-  #transform_image_files((lambda img: image_to_lane_markings(img, model)),
-  #                      'test_images/*.jpg', 'output_images/markings')
+  
+  lane_model = create_model(lane_settings)
+  train_model(lane_model, lane_settings, epochs=100)
+  lane_model.save_weights('models/lanes.h5')
+  lane_model.load_weights('models/lanes.h5')
+  
+  car_model = create_model(car_settings)
+  train_model(car_model, car_settings, epochs=100)
+  car_model.save_weights('models/cars.h5')
+  car_model.load_weights('models/cars.h5')
+  
+  transform_image_files(lambda img: crop_scale_white_balance(img, lane_settings),
+                        'test_images/*.jpg', 'output_images/cropped_lanes')
+  transform_image_files(lambda img: uncrop_scale(img, lane_settings),
+                        'output_images/cropped_lanes/*.jpg', 'output_images/uncropped_lanes')
+  transform_image_files((lambda img: image_to_prediction(img, lane_model, lane_settings)),
+                        'test_images/*.jpg', 'output_images/markings')
   #transform_image_files(perspective_transform,
   #                      'output_images/dash_undistort/*.jpg',
   #                      'output_images/birds_eye')
@@ -489,10 +516,10 @@ def main():
   transform_image_files(convert_lane_heatmap_to_lane_lines_image,
                         'output_images/birds_eye_markings/*.jpg',
                         'output_images/birds_eye_lines')
-  transform_image_files(lambda img: video_processor(model=model,calibration=calibration).process_image(img),
+  transform_image_files(lambda img: video_processor(lane_model=lane_model,car_model=car_model,calibration=calibration).process_image(img),
                         'test_images/*.jpg',
                         'output_images/final')
-  #process_video('project_video.mp4', 'output_images/videos/project_video.mp4', model, calibration)
+  process_video('project_video.mp4', 'output_images/videos/project_video.mp4', lane_model, car_model, calibration)
 
 if __name__ == '__main__':
   main()
