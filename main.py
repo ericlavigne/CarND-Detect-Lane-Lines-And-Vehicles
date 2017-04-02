@@ -13,10 +13,12 @@ from moviepy.editor import VideoFileClip
 import tensorflow as tf
 
 def read_image(path):
-  return cv2.cvtColor(cv2.imread(img), cv2.COLOR_BGR2RGB)
+  return cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
 
-def write_image(path,img)
-  cv2.imwrite(path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+def write_image(path,img):
+  if len(img.shape) == 3 and img.shape[2] == 3:
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+  cv2.imwrite(path, img)
 
 def calibrate_chessboard():
   objp = np.zeros((6*9,3), np.float32)
@@ -429,7 +431,7 @@ def annotate_original_image(img, lane_markings_img=None, lane_lines=(None,None),
     car_cyan = np.zeros_like(car_img)
     car_gray = cv2.cvtColor(car_img, cv2.COLOR_RGB2GRAY)
     car_cyan[car_gray > 100] = np.uint8([0,255,255])
-    img = cv2.addWeighted(img, 0.8, car_cyan, 1.0, 0.0)
+    img = cv2.addWeighted(img, 0.8, car_cyan, 0.5, 0.0)
   if lane_lines[0] != None and lane_lines[1] != None:
     radius = radius_of_lane_lines(lane_lines[0], lane_lines[1])
     offset = offset_from_lane_center(lane_lines[0], lane_lines[1])
@@ -495,13 +497,13 @@ def main():
   #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   
   lane_model = create_model(lane_settings)
-  train_model(lane_model, lane_settings, epochs=1000)
-  lane_model.save_weights('models/lanes.h5')
+  #train_model(lane_model, lane_settings, epochs=1000)
+  #lane_model.save_weights('models/lanes.h5')
   lane_model.load_weights('models/lanes.h5')
   
   car_model = create_model(car_settings)
-  train_model(car_model, car_settings, epochs=1000)
-  car_model.save_weights('models/cars.h5')
+  #train_model(car_model, car_settings, epochs=1000)
+  #car_model.save_weights('models/cars.h5')
   car_model.load_weights('models/cars.h5')
   
   transform_image_files(lambda img: crop_scale_white_balance(img, lane_settings),
