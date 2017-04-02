@@ -235,7 +235,7 @@ def image_to_prediction(img, model, opt):
 # information to determine the appropriate value of delta_y as well.
 perspective_delta_x = 744
 perspective_delta_y = int(perspective_delta_x * 30 / 3.7)
-perspective_border_x = int(perspective_delta_x * 0.34)
+perspective_border_x = int(perspective_delta_x * 0.7)
 perspective_max_y = perspective_delta_y
 perspective_max_x = int(perspective_delta_x + 2 * perspective_border_x)
 perspective_pixels_per_meter = perspective_delta_x / 3.7
@@ -257,6 +257,8 @@ def draw_lines_on_dash(dash_img, lines):
   points_right = []
   for line_idx in range(2):
     line = lines[line_idx]
+    #print("-----")
+    #print("Line: " + str(line))
     for y_idx in range(max_y_idx + 1):
       portion_bottom_to_top = y_idx * 1.0 / max_y_idx
       y = perspective_origin_y_bottom - portion_bottom_to_top * perspective_origin_delta_y
@@ -266,10 +268,16 @@ def draw_lines_on_dash(dash_img, lines):
       x_left = perspective_origin_x_bottom_left + portion_bottom_to_top * (perspective_origin_x_top_left - perspective_origin_x_bottom_left)
       x_right = perspective_origin_x_bottom_right + portion_bottom_to_top * (perspective_origin_x_top_right - perspective_origin_x_bottom_right)
       x = x_left + x_portion * (x_right - x_left)
+      #print("  (x, y) =  (" + str(round(x,2)) + ", " + str(round(y,2)) + ")   " +
+      #      "  (xp,yp) = (" + str(round(xp,2)) + ", " + str(round(yp,2)) + ")")
+      #print("x_left=" + str(round(x_left,2)) + ", x_right=" + str(round(x_right,2)))
+      #print("x_portion=" + str(round(x_portion,2)) + ", bottom_to_top=" + str(round(portion_bottom_to_top,2)))
+      #print("..")
       if line_idx == 0:
         points_left.append([x,y])
       else:
         points_right.append([x,y])
+    #print("-----")
   points_right.reverse()
   points = points_left + points_right
   img = np.zeros_like(dash_img)
@@ -300,90 +308,53 @@ def perspective_transform(img):
   img = cv2.warpPerspective(img, M, (perspective_max_x, perspective_max_y), flags=cv2.INTER_LINEAR)
   return img
 
-def find_lane_lines(img, prev_left=None, prev_right=None, prev_weight=0.8):
-  img_center_x = img.shape[1] / 2.0
-  center = np.float32([0.0, 0.0, img_center_x]) # default of straight line down center
-  lane_line_width = perspective_delta_x * 0.3
-  image_center_width = perspective_delta_x * 0.75
-  lane_center_width = perspective_delta_x * 0.4
-  lane_max_width = perspective_delta_x * 1.25
-  default_left_poly = np.float32([0.0, 0.0, perspective_border_x])
-  default_right_poly = np.float32([0.0, 0.0, perspective_max_x - perspective_border_x])
-  if prev_left != None and prev_right != None:
-    center = (prev_left + prev_right) / 2
-  if len(img.shape) == 3:
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+def find_lane_centroids(img):
+  # Assuming usual lane width and car in center of lane, these are likely places to find bottom of lane lines
+  expected_x_starts = [perspective_border_x, perspective_border_x + perspective_delta_x]
+  # Create two lists to contain centroids for left and right lane lines
+  centroids = [[],[]]
+  # Size of squares in which we'll search. Wide enough to handle uncertainty.
+  # Narrow enough not to pick up the wrong lane line.
+  search_range = int(perspective_delta_x / 5.0)
+  y_iterations = int(perspective_max_y / search_range)
+  # Which pixels in the image have been identified as likely lane markings?
   lane_pixels = img.nonzero()
   lane_pixels_y = np.array(lane_pixels[0])
   lane_pixels_x = np.array(lane_pixels[1])
+  # For each lane, sweep from bottom of image to top. We're already fairly
+  # certain where lanes start at bottom.
+  for lane_idx in range(2):
+    last_x = expected_x_starts[lane_idx]
+    for y_idx in range(y_iterations):
+      y_mid = int((y_iterations - y_idx) * perspective_max_y / y_iterations)
+      y_min = y_mid - search_range
+      y_max = y_mid + search_range
+      x_min = last_x - search_range
+      x_max = last_x + search_range
+      found_indices = ((lane_pixels_x >= x_min) & (lane_pixels_x <= x_max) & (lane_pixels_y >= y_min) & (lane_pixels_y <= y_max)).nonzero()[0]
+      found_x = lane_pixels_x[found_indices]
+      if len(found_x) > 1:
+        last_x = int(np.mean(found_x))
+      centroids[lane_idx].append([last_x, y_mid])
+  return centroids
 
-  # Starting guess because we'll look for lane marking pixels near that guess.
-  left_poly = prev_left
-  right_poly = prev_right
-  if left_poly is None:
-    left_poly = default_left_poly
-  if right_poly is None:
-    right_poly = default_right_poly
+def draw_lane_centroids(img, centroids):
+  img = np.copy(img)
+  for lane_idx in range(2):
+    for center in centroids[lane_idx]:
+      cv2.circle(img, (center[0],center[1]), 20, (255,255,255), 10)
+  return img
 
-  # Find pixels within lane_uncertainty of the expected lane line positions
-  in_left_lane = (lane_line_width / 2 >
-                    abs(lane_pixels_x - (left_poly[0] * lane_pixels_y**2 +
-                                         left_poly[1] * lane_pixels_y +
-                                         left_poly[2])))
-  in_right_lane = (lane_line_width / 2 >
-                     abs(lane_pixels_x - (right_poly[0] * lane_pixels_y**2 +
-                                          right_poly[1] * lane_pixels_y +
-                                          right_poly[2])))
-  left_of_lane_center = lane_pixels_x < (-lane_center_width / 2 +
-                                         center[0] * lane_pixels_y**2 +
-                                         center[1] * lane_pixels_y +
-                                         center[2])
-  right_of_lane_center = lane_pixels_x > (lane_center_width / 2 +
-                                         center[0] * lane_pixels_y**2 +
-                                         center[1] * lane_pixels_y +
-                                         center[2])
-  # We need to find left lane on left and right lane on right.
-  # Allow small deviation due to curving lanes crossing the center.
-  left_side_of_image = lane_pixels_x < (img_center_x - image_center_width / 2)
-  right_side_of_image = lane_pixels_x > (img_center_x + image_center_width / 2)
-  near_car = ((lane_pixels_x > (img_center_x - lane_max_width / 2)) &
-              (lane_pixels_x < (img_center_x + lane_max_width / 2)))
-  # Criteria for which lane each pixel belongs in
-  left_lane_indices = (in_left_lane & left_side_of_image & left_of_lane_center & near_car).nonzero()[0]
-  right_lane_indices = (in_right_lane & right_side_of_image & right_of_lane_center & near_car).nonzero()[0]
-  # In case we don't find enough lane pixels in expected place, snap back to default expectation.
-  left_poly = default_left_poly
-  right_poly = default_right_poly
-  # Prepare variables for line fitting.
-  left_lane_y = lane_pixels_y[left_lane_indices]
-  right_lane_y = lane_pixels_y[right_lane_indices]
-  left_lane_x = lane_pixels_x[left_lane_indices]
-  right_lane_x = lane_pixels_x[right_lane_indices]
-  # If not enough data, fall back on default value of lines straight ahead.
-  if len(left_lane_indices) > 20 and len(right_lane_indices) > 20:
-    # Distance between y-values is strong indicator of how well fitting will work.
-    left_y_spread = np.amax(left_lane_y) - np.amin(left_lane_y)
-    right_y_spread = np.amax(right_lane_y) - np.amin(right_lane_y)
-    min_y_spread = min(left_y_spread, right_y_spread)
-    # With lane pixels at top and bottom, we can fit a parabola.
-    if min_y_spread > 2500 and not (prev_left is None) and not (prev_right is None):
-      left_poly = np.polyfit(left_lane_y, left_lane_x, 2)
-      right_poly = np.polyfit(right_lane_y, right_lane_x, 2)
-    # With just two lane markings, a line is the best we can do.
-    elif min_y_spread > 800:
-      left_poly[1:3] = np.polyfit(left_lane_y, left_lane_x, 1)
-      right_poly[1:3] = np.polyfit(right_lane_y, right_lane_x, 1)
-    # With only one lane marking, we'll need to assume that the line is vertical.
-    else:
-      left_poly[2] = np.mean(left_lane_x)
-      right_poly[2] = np.mean(right_lane_x)
-  # If previous fits available, we'll apply momentum for smoothness.
-  if prev_left != None and prev_right != None:
-    left_poly = ((prev_left * prev_weight) + (left_poly * (1 - prev_weight)))
-    right_poly = ((prev_right * prev_weight) + (right_poly * (1 - prev_weight)))
-    return (left_poly, right_poly)
-  else:
-    return find_lane_lines(img, prev_left=left_poly, prev_right=right_poly, prev_weight=0.0)
+def fit_parabolas_to_lane_centroids(centroids):
+  polys = []
+  for lane_idx in range(2):
+    x_vals = []
+    y_vals = []
+    for point in centroids[lane_idx]:
+      x_vals.append(point[0])
+      y_vals.append(point[1])
+    polys.append(np.polyfit(y_vals, x_vals, 2))
+  return polys
 
 def draw_lane_lines(lines):
   img = np.zeros((perspective_max_y,perspective_max_x), dtype="uint8")
@@ -401,9 +372,11 @@ def draw_lane_lines(lines):
   return img
 
 def convert_lane_heatmap_to_lane_lines_image(img):
-  lines = find_lane_lines(img)
-  #lines = find_lane_lines(img, prev_left=lines[0], prev_right=lines[1], prev_weight=0.0)
-  return draw_lane_lines(lines)
+  centroids = find_lane_centroids(img)
+  lines = fit_parabolas_to_lane_centroids(centroids)
+  res = draw_lane_lines(lines)
+  res = draw_lane_centroids(res, centroids)
+  return res
 
 def radius_of_lane_lines(left_lane, right_lane):
   if left_lane == None or right_lane == None:
@@ -477,10 +450,16 @@ class video_processor(object):
     for i in np.random.choice(range(len(self.recent_markings)),size=10):
       combined_markings = cv2.addWeighted(combined_markings, 1.0, self.recent_markings[i], 1.0, 0.0)
     birds_eye_markings = perspective_transform(combined_markings)
-    lines = find_lane_lines(birds_eye_markings, prev_left=self.prev_left, prev_right=self.prev_right)
+    #print("=== Processing image ===")
+    centroids = find_lane_centroids(birds_eye_markings)
+    #print("Centroids: " + str(centroids))
+    lines = fit_parabolas_to_lane_centroids(centroids)
+    #print("Lines: " + str(lines))
     self.prev_left = lines[0]
     self.prev_right = lines[1]
-    return annotate_original_image(undistorted, combined_markings, lines, cars)
+    result = annotate_original_image(undistorted, combined_markings, lines, cars)
+    #print("++++++++++++++++++++++++")
+    return result
 
 def process_video(video_path_in, video_path_out, lane_model, car_model, calibration):
   clip_in = VideoFileClip(video_path_in)
@@ -497,26 +476,26 @@ def save_examples_from_video():
 
 def main():
   calibration = calibrate_chessboard()
-  undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
-  save_examples_from_video()
-  undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
+  #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
+  #save_examples_from_video()
+  #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   
   lane_model = create_model(lane_settings)
-  train_model(lane_model, lane_settings, epochs=1000)
-  lane_model.save_weights('models/lanes.h5')
+  #train_model(lane_model, lane_settings, epochs=1000)
+  #lane_model.save_weights('models/lanes.h5')
   lane_model.load_weights('models/lanes.h5')
   
   car_model = create_model(car_settings)
-  train_model(car_model, car_settings, epochs=1000)
-  car_model.save_weights('models/cars.h5')
+  #train_model(car_model, car_settings, epochs=1000)
+  #car_model.save_weights('models/cars.h5')
   car_model.load_weights('models/cars.h5')
   
-  transform_image_files(lambda img: crop_scale_white_balance(img, lane_settings),
-                        'test_images/*.jpg', 'output_images/cropped_lanes')
-  transform_image_files(lambda img: uncrop_scale(img, lane_settings),
-                        'output_images/cropped_lanes/*.jpg', 'output_images/uncropped_lanes')
-  transform_image_files((lambda img: image_to_prediction(img, lane_model, lane_settings)),
-                        'test_images/*.jpg', 'output_images/markings')
+  #transform_image_files(lambda img: crop_scale_white_balance(img, lane_settings),
+  #                      'test_images/*.jpg', 'output_images/cropped_lanes')
+  #transform_image_files(lambda img: uncrop_scale(img, lane_settings),
+  #                      'output_images/cropped_lanes/*.jpg', 'output_images/uncropped_lanes')
+  #transform_image_files((lambda img: image_to_prediction(img, lane_model, lane_settings)),
+  #                      'test_images/*.jpg', 'output_images/markings')
   transform_image_files(perspective_transform,
                         'output_images/dash_undistort/*.jpg',
                         'output_images/birds_eye')
@@ -532,7 +511,7 @@ def main():
   transform_image_files(lambda img: video_processor(lane_model=lane_model,car_model=car_model,calibration=calibration).process_image(img),
                         'test_images/*.jpg',
                         'output_images/final')
-  process_video('project_video.mp4', 'output_images/videos/project_video.mp4', lane_model, car_model, calibration)
+  #process_video('project_video.mp4', 'output_images/videos/project_video.mp4', lane_model, car_model, calibration)
 
 if __name__ == '__main__':
   main()
