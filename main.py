@@ -13,14 +13,17 @@ from moviepy.editor import VideoFileClip
 import tensorflow as tf
 
 def read_image(path):
+  """Ensure images read in RGB format for consistency with moviepy"""
   return cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
 
 def write_image(path,img):
+  """Handles RGB or grayscale images"""
   if len(img.shape) == 3 and img.shape[2] == 3:
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
   cv2.imwrite(path, img)
 
 def calibrate_chessboard():
+  """Perform calibration using chessboard images"""
   objp = np.zeros((6*9,3), np.float32)
   objp[:,:2] = np.mgrid[0:9,0:6].T.reshape(-1,2)
 
@@ -44,6 +47,7 @@ def calibrate_chessboard():
   return calibration
 
 def transform_image_files(transformation, src_pattern, dst_dir):
+  """Concise testing for image transformation functions"""
   src_fpaths = glob(src_pattern)
   for src_fpath in src_fpaths:
     img = read_image(src_fpath)
@@ -53,13 +57,14 @@ def transform_image_files(transformation, src_pattern, dst_dir):
     write_image(dst_fpath,dst_img)
 
 def undistort(img, calibration):
+  """Use calibration to correct image distortions"""
   return cv2.undistort(img, calibration[0], calibration[1], None, calibration[0])
 
 def undistort_files(calibration, src_pattern, dst_dir):
+  """Test image distortion correction on test files"""
   transform_image_files((lambda x: undistort(x, calibration)), src_pattern, dst_dir)
 
 lane_settings = {'name': 'lanes',
-                 # previously weight 10.0, threshold 0.35
                  'presence_weight': 50.0, 'threshold': 0.5,
                  'original_max_x': 1280, 'original_max_y': 720,
                  'crop_min_x': 200, 'crop_max_x': 1080,
@@ -492,18 +497,18 @@ def save_examples_from_video():
 
 def main():
   calibration = calibrate_chessboard()
-  #undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
-  #save_examples_from_video()
-  #undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
+  undistort_files(calibration, 'camera_cal/calibration*.jpg', 'output_images/chessboard_undistort')
+  save_examples_from_video()
+  undistort_files(calibration, 'test_images/*.jpg', 'output_images/dash_undistort')
   
   lane_model = create_model(lane_settings)
-  #train_model(lane_model, lane_settings, epochs=1000)
-  #lane_model.save_weights('models/lanes.h5')
+  train_model(lane_model, lane_settings, epochs=1000)
+  lane_model.save_weights('models/lanes.h5')
   lane_model.load_weights('models/lanes.h5')
   
   car_model = create_model(car_settings)
-  #train_model(car_model, car_settings, epochs=1000)
-  #car_model.save_weights('models/cars.h5')
+  train_model(car_model, car_settings, epochs=1000)
+  car_model.save_weights('models/cars.h5')
   car_model.load_weights('models/cars.h5')
   
   transform_image_files(lambda img: crop_scale_white_balance(img, lane_settings),
@@ -512,15 +517,15 @@ def main():
                         'output_images/cropped_lanes/*.jpg', 'output_images/uncropped_lanes')
   transform_image_files((lambda img: image_to_prediction(img, lane_model, lane_settings)),
                         'test_images/*.jpg', 'output_images/markings')
-  #transform_image_files(perspective_transform,
-  #                      'output_images/dash_undistort/*.jpg',
-  #                      'output_images/birds_eye')
-  #undistort_files(calibration,
-  #                'output_images/markings/*.jpg',
-  #                'output_images/undistort_markings')
-  #transform_image_files(perspective_transform,
-  #                      'output_images/undistort_markings/*.jpg',
-  #                      'output_images/birds_eye_markings')
+  transform_image_files(perspective_transform,
+                        'output_images/dash_undistort/*.jpg',
+                        'output_images/birds_eye')
+  undistort_files(calibration,
+                  'output_images/markings/*.jpg',
+                  'output_images/undistort_markings')
+  transform_image_files(perspective_transform,
+                        'output_images/undistort_markings/*.jpg',
+                        'output_images/birds_eye_markings')
   transform_image_files(convert_lane_heatmap_to_lane_lines_image,
                         'output_images/birds_eye_markings/*.jpg',
                         'output_images/birds_eye_lines')

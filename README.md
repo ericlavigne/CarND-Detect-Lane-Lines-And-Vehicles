@@ -7,8 +7,16 @@ nanodegree. Primary goals include detecting the lane lines, determining the
 curvature of the lane as well as the car's position within the lane, and
 detecting other vehicles.
 
-Find the latest version of this project on
-[Github](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles).
+I chose to use convolutional neural networks to detect lane lines and cars, rather
+than the gradient and SVM-based approaches recommended for these projects. I
+annotated training images with the correct answers by adding extra layers to
+indicate which parts of the picture were part of lane lines or cars, then trained
+convolutional neural networks to produce such image masks for other images from
+the video. The process of curating training data and training convolutional
+neural networks will be discussed further later in this document.
+
+*Note: Find the latest version of this project on
+[Github](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles).*
 
 The Project
 ---
@@ -17,15 +25,13 @@ The goals / steps of this project are the following:
 
 * Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
 * Apply a distortion correction to raw images.
-* Use color transforms, gradients, etc., to create a thresholded binary image.
+* Create thresholded binary images representing pixels of interest: lane markings and cars.
 * Apply a perspective transform to rectify binary image ("birds-eye view").
 * Detect lane pixels and fit to find the lane boundary.
 * Determine the curvature of the lane and vehicle position with respect to center.
 * Warp the detected lane boundaries back onto the original image.
 * Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.
 * Detect vehicle pixels and place bounding boxes around each detected vehicle.
-
-The images for camera calibration are stored in the folder called `camera_cal`.  The images in `test_images` are for testing your pipeline on single frames.  If you want to extract more test images from the videos, you can simply use an image writing method like `cv2.imwrite()`, i.e., you can read the video in frame by frame as usual, and for frames you want to save for later you can write to an image file.  
 
 ---
 
@@ -52,6 +58,115 @@ edges of the car hood in the images below.
 |:-----------------------:|:--------------------------------------:|
 | ![original image](https://raw.githubusercontent.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/master/test_images/straight_lines1.jpg)          | ![undistorted image](https://raw.githubusercontent.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/master/output_images/dash_undistort/straight_lines1.jpg)                         |
 
+Training Data
+---
+
+The original images used for training are in the
+[test_images directory](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/tree/master/test_images).
+These include 8 images provided as examples by Udacity and 6 images extracted from the
+[project video](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/blob/master/project_video.mp4?raw=true).
+
+I copied each of these images to the
+[training directory](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/tree/master/training),
+for annotation. I converted the images to Pixen format, added layers to represent lane markings and cars, and
+created image masks in those layers to indicate the locations of lane markings and cars. I saved each layer separately
+with filenames ending in "x", "lanes", and "cars" so they could easily be imported into Python for training convolutional neural
+networks.
+
+| Original Image    | Cars Layer   | Lanes Layer |
+|:-----------------:|:------------:|:-----------:|
+| ![original image](https://raw.githubusercontent.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/master/training/test1_x.png) | ![cars layer](https://raw.githubusercontent.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/master/training/test1_cars.png)                         | ![lanes layer](https://raw.githubusercontent.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/master/training/test1_lanes.png) |
+
+Pre-Processing
+---
+
+All images are cropped to rectangular regions of interest (mostly just cutting out the sky)
+as well as scaled down by a factor of two both vertically and horizontally. Both cropping
+and scaling are primarily intended to save memory during training.
+
+All images are gaussian blurred and scaled to a range of -0.5 to 0.5, both of which are
+intended to improve convergence for convolutional neural network training.
+
+Convolutional Neural Networks
+---
+
+The lane markings and cars are identified by separate (but architecturally identical)
+convolutional neural networks. All layers use SAME border mode (with no flattening)
+so that the network's output (after thresholding) is an image of the same dimensions
+as the input. The lane model produces an image mask indicating which pixels are part
+of lane markings. The car model produces an image mask indicating which pixels are part
+of cars.
+
+The neural network architecture consists of 7 convolutional layers. The input
+has 3 channels for R, G, and B. Hidden convolutions have depths of 20, 30, 30,
+30, 20, and 10. The output layer has a depth of only 1 to produce a single-channel
+image mask. Dropouts of 50% are applied after each hidden layer to prevent
+over-fitting.
+
+Lane lines and cars are both under-represented classes compared to the background,
+so I used a custom loss function called weighted_binary_crossentropy to increase
+the weight of minority classes by a factor of 50.
+
+You can see in the image below that the convolutional neural networks for cars
+can identify cars on the horizon or cars that are barely visible over the barrier
+on the left. The pink overlay is the thresholded output from the lane markings
+convolutional network. The cyan overlay is the thresholded output from the cars
+convolutional network. (There is also one false positive, part of the fence on
+the right.)
+
+| Original Image    | Annotated by Conv Net   |
+|:-----------------:|:-----------------------:|
+| ![original image](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/test_images/video1_20.jpg) | ![annotated](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/final/video1_20.jpg)                         |
+
+Fitting and Characterizing Lane Lines
+---
+
+After identifying lane marking pixels, I needed to transform those marking positions
+into a bird's eye view for further analysis. I identified fixed points on the
+lane lines in the following image with straight lane lines: two points near the
+car and two points near the horizon. These points form a trapezoid in the image
+but a rectangle seen from above. I used proportions from the Udacity project
+description, 3.7 meter lane width and 30 meter visible distance, to define a
+transformation into a bird's eye view. Relevant functions include
+perspective_matrices and perspective_transform.
+
+| Annotated Image |
+|:--------------:|
+| ![original image](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/final/straight_lines1.jpg) |
+
+| Bird's Eye | Detected Markings | Parabolic Fit |
+|:----------:|:-----------------:|:-------------:|
+| ![birds eye](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/birds_eye/straight_lines1.jpg) | ![markings](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/birds_eye_markings/straight_lines1.jpg) | ![fit](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/birds_eye_lines/straight_lines1.jpg) |
+
+With the identified lane markings transformed into an overhead perspective,
+I could fit parabolas to each lane, then calculate curvature and position of
+the car within the lane. Unfortunately, parabolic fits are not well-behaved
+with only 1-3 visible lane markings at a time for each lane. This problem 
+could probably be fixed by identifying more of the lane markings near the
+horizon. Relevant functions include find_lane_lines, draw_lane_lines,
+radius_of_lane_lines, and offset_from_lane_center.
+
+| Annotated Image |
+|:--------------:|
+| ![original image](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/final/test4.jpg) |
+
+| Bird's Eye | Detected Markings | Parabolic Fit |
+|:----------:|:-----------------:|:-------------:|
+| ![birds eye](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/birds_eye/test4.jpg) | ![markings](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/birds_eye_markings/test4.jpg) | ![fit](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/birds_eye_lines/test4.jpg) |
+
+Annotating Video
+---
+
+When annotating a video, rather than an image, there is an opportunity to take
+advantage of information from previous frames. I chose stabilize the lane fitting
+by blend the identified lane markings from a random sample of 10 out of the
+previous 30 frames, as well as by forcing each parabolic fit to to be only a
+small change compared to the previous frame. See the video_processor class
+for details.
+
+| Project Video |
+|:-------------:|
+| [![project video](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/final/video1_40.jpg)](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/videos/project_video.mp4) |
 
 Installation
 ---
