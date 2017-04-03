@@ -315,8 +315,8 @@ def find_lane_centroids(img):
   centroids = [[],[]]
   # Size of squares in which we'll search. Wide enough to handle uncertainty.
   # Narrow enough not to pick up the wrong lane line.
-  search_range = int(perspective_delta_x / 5.0)
-  y_iterations = int(perspective_max_y / search_range)
+  search_range = int(perspective_delta_x / 3.0)
+  y_iterations = int(perspective_max_y * 0.5 / search_range)
   # Which pixels in the image have been identified as likely lane markings?
   lane_pixels = img.nonzero()
   lane_pixels_y = np.array(lane_pixels[0])
@@ -325,6 +325,7 @@ def find_lane_centroids(img):
   # certain where lanes start at bottom.
   for lane_idx in range(2):
     last_x = expected_x_starts[lane_idx]
+    found_first = False
     for y_idx in range(y_iterations):
       y_mid = int((y_iterations - y_idx) * perspective_max_y / y_iterations)
       y_min = y_mid - search_range
@@ -335,7 +336,9 @@ def find_lane_centroids(img):
       found_x = lane_pixels_x[found_indices]
       if len(found_x) > 1:
         last_x = int(np.mean(found_x))
-      centroids[lane_idx].append([last_x, y_mid])
+        found_first = True
+      if found_first:
+        centroids[lane_idx].append([last_x, y_mid])
   return centroids
 
 def draw_lane_centroids(img, centroids):
@@ -353,7 +356,16 @@ def fit_parabolas_to_lane_centroids(centroids):
     for point in centroids[lane_idx]:
       x_vals.append(point[0])
       y_vals.append(point[1])
-    polys.append(np.polyfit(y_vals, x_vals, 2))
+    min_y = np.amin(y_vals)
+    max_y = np.amax(y_vals)
+    mid_y = (min_y + max_y) / 2
+    weights = []
+    for y in y_vals:
+      if y > mid_y:
+        weights.append(1.0)
+      else:
+        weights.append(max(0.1, ((y - min_y) * 1.0 / (mid_y - min_y))))
+    polys.append(np.polyfit(y_vals, x_vals, 2, w=weights))
   return polys
 
 def draw_lane_lines(lines):
@@ -447,8 +459,13 @@ class video_processor(object):
     if len(self.recent_markings) > 30:
       self.recent_markings = self.recent_markings[-30:]
     combined_markings = np.zeros_like(markings)
+    included_so_far = 0
     for i in np.random.choice(range(len(self.recent_markings)),size=10):
-      combined_markings = cv2.addWeighted(combined_markings, 1.0, self.recent_markings[i], 1.0, 0.0)
+      new_weight = 1.0 / (included_so_far + 1)
+      old_weight = 1.0 - new_weight
+      combined_markings = cv2.addWeighted(combined_markings, old_weight , self.recent_markings[i], new_weight, 0.0)
+      included_so_far += 1
+    combined_markings[combined_markings < 80] = 0
     birds_eye_markings = perspective_transform(combined_markings)
     #print("=== Processing image ===")
     centroids = find_lane_centroids(birds_eye_markings)
