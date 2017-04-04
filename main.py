@@ -64,6 +64,9 @@ def undistort_files(calibration, src_pattern, dst_dir):
   """Test image distortion correction on test files"""
   transform_image_files((lambda x: undistort(x, calibration)), src_pattern, dst_dir)
 
+original_max_x = 1280
+original_max_y = 720
+
 lane_settings = {'name': 'lanes',
                  'presence_weight': 50.0, 'threshold': 0.5,
                  'original_max_x': 1280, 'original_max_y': 720,
@@ -251,40 +254,6 @@ perspective_origin_delta_x_bottom = perspective_origin_x_bottom_right - perspect
 perspective_origin_delta_x_top = perspective_origin_x_top_right - perspective_origin_x_top_left
 perspective_origin_delta_y = perspective_origin_y_bottom - perspective_origin_y_top
 
-def draw_lines_on_dash(dash_img, lines):
-  max_y_idx = 5
-  points_left = []
-  points_right = []
-  for line_idx in range(2):
-    line = lines[line_idx]
-    #print("-----")
-    #print("Line: " + str(line))
-    for y_idx in range(max_y_idx + 1):
-      portion_bottom_to_top = y_idx * 1.0 / max_y_idx
-      y = perspective_origin_y_bottom - portion_bottom_to_top * perspective_origin_delta_y
-      yp = perspective_delta_y * (1 - portion_bottom_to_top)
-      xp = line[0] * yp**2 + line[1] * yp + line[2]
-      x_portion = (xp - perspective_border_x) / perspective_delta_x
-      x_left = perspective_origin_x_bottom_left + portion_bottom_to_top * (perspective_origin_x_top_left - perspective_origin_x_bottom_left)
-      x_right = perspective_origin_x_bottom_right + portion_bottom_to_top * (perspective_origin_x_top_right - perspective_origin_x_bottom_right)
-      x = x_left + x_portion * (x_right - x_left)
-      #print("  (x, y) =  (" + str(round(x,2)) + ", " + str(round(y,2)) + ")   " +
-      #      "  (xp,yp) = (" + str(round(xp,2)) + ", " + str(round(yp,2)) + ")")
-      #print("x_left=" + str(round(x_left,2)) + ", x_right=" + str(round(x_right,2)))
-      #print("x_portion=" + str(round(x_portion,2)) + ", bottom_to_top=" + str(round(portion_bottom_to_top,2)))
-      #print("..")
-      if line_idx == 0:
-        points_left.append([x,y])
-      else:
-        points_right.append([x,y])
-    #print("-----")
-  points_right.reverse()
-  points = points_left + points_right
-  img = np.zeros_like(dash_img)
-  cv2.fillPoly(img, np.int_([points]), (0,255,0))
-  res = cv2.addWeighted(dash_img, 1, img, 0.3, 0)
-  return res
-
 def perspective_matrices():
   # These points (list of [x,y] pairs) are taken from lane lines
   # in output_images/dash_undistort/straight_lines2.jpg.
@@ -306,6 +275,10 @@ M,M_inv = perspective_matrices()
 
 def perspective_transform(img):
   img = cv2.warpPerspective(img, M, (perspective_max_x, perspective_max_y), flags=cv2.INTER_LINEAR)
+  return img
+
+def perspective_reverse(img):
+  img = cv2.warpPerspective(img, M_inv, (original_max_x, original_max_y), flags=cv2.INTER_LINEAR)
   return img
 
 def find_lane_centroids(img):
@@ -382,6 +355,25 @@ def draw_lane_lines(lines):
       prev_x = x
       prev_y = y
   return img
+
+def draw_lane_lines(lines):
+  img = np.zeros((perspective_max_y, perspective_max_x, 3), dtype="uint8")
+  points = [[],[]]
+  for line_idx in range(2):
+    line = lines[line_idx]
+    for i in range(31):
+      y = int(perspective_max_y * i / 30)
+      x = int(line[0] * y**2 + line[1] * y + line[2])
+      points[line_idx].append((x,y))
+  points[1].reverse()
+  cv2.fillPoly(img, np.int_([points[0] + points[1]]), (0,255,0))
+  return img
+
+def draw_lines_on_dash(dash_img, lines):
+  perspective_lanes_img = draw_lane_lines(lines)
+  dash_lanes_img = perspective_reverse(perspective_lanes_img)
+  res = cv2.addWeighted(dash_img, 1, dash_lanes_img, 0.3, 0)
+  return res
 
 def convert_lane_heatmap_to_lane_lines_image(img):
   centroids = find_lane_centroids(img)
@@ -516,6 +508,9 @@ def main():
   transform_image_files(perspective_transform,
                         'output_images/dash_undistort/*.jpg',
                         'output_images/birds_eye')
+  transform_image_files(perspective_reverse,
+                        'output_images/birds_eye/*.jpg',
+                        'output_images/bird_to_dash')
   undistort_files(calibration,
                   'output_images/markings/*.jpg',
                   'output_images/undistort_markings')
