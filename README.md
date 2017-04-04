@@ -140,10 +140,7 @@ perspective_matrices and perspective_transform.
 
 With the identified lane markings transformed into an overhead perspective,
 I could fit parabolas to each lane, then calculate curvature and position of
-the car within the lane. Unfortunately, parabolic fits are not well-behaved
-with only 1-3 visible lane markings at a time for each lane. This problem 
-could probably be fixed by identifying more of the lane markings near the
-horizon. Relevant functions include find_lane_lines, draw_lane_lines,
+the car within the lane. Relevant functions include find_lane_lines, draw_lane_lines,
 radius_of_lane_lines, and offset_from_lane_center.
 
 | Annotated Image |
@@ -158,15 +155,31 @@ Annotating Video
 ---
 
 When annotating a video, rather than an image, there is an opportunity to take
-advantage of information from previous frames. I chose stabilize the lane fitting
-by blend the identified lane markings from a random sample of 10 out of the
-previous 30 frames, as well as by forcing each parabolic fit to to be only a
-small change compared to the previous frame. See the video_processor class
+advantage of information from previous frames. I chose to stabilize the lane fitting
+by blending the identified lane markings from a random sample of 10 out of the
+previous 30 frames, fitting lane lines based on pixels that were identified
+as lane pixels in at least 3 of the 10 frames. See the video_processor class
 for details.
 
 | Project Video |
 |:-------------:|
 | [![project video](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/final/video1_40.jpg)](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/raw/master/output_images/videos/project_video.mp4) |
+
+Discussion
+---
+
+Both lane detection and vehicle detection depend on neural network models
+trained on 14 example images. These models are unlikely to work on roads
+with different lane appearances, or even on different car models. This could
+be fixed just by collecting images on which the models performed poorly, adding
+labels, and including these new images in the training set.
+
+The search algorithm for lane lines in this project assumes that the car is
+fairly close to the center of the lanes. That search algorithm would need to be
+modified to find lane lines in arbitrary positions with respect to the car.
+
+The perspective transformation assumes that the road is flat. That algorithm
+would not be useable on hills.
 
 Installation
 ---
