@@ -419,9 +419,9 @@ def annotate_original_image(img, lane_markings_img=None, lane_lines=(None,None),
     offset = offset_from_lane_center(lane_lines[0], lane_lines[1])
     radius_text = "Curvature: Straight"
     if radius and abs(radius) > 100 and abs(radius) < 10000:
-      radius_direction = "left"
+      radius_direction = "right"
       if radius > 0:
-        radius_direction = "right"
+        radius_direction = "left"
       radius_text = "Curvature radius " + str(100 * int(abs(radius) / 100)) + "m to the " + radius_direction
     offset_text = "Offset: Center"
     if abs(offset) > 0.1:
