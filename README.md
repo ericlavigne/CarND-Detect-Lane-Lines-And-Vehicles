@@ -77,6 +77,11 @@ networks.
 |:-----------------:|:------------:|:-----------:|
 | ![original image](https://raw.githubusercontent.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/master/training/test1_x.png) | ![cars layer](https://raw.githubusercontent.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/master/training/test1_cars.png)                         | ![lanes layer](https://raw.githubusercontent.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/master/training/test1_lanes.png) |
 
+Note: Annotation accuracy is important. With only 14 images, it's okay to annotate slowly
+and focus on accuracy. Zoom in to paint individual pixels around the edge of a lane line,
+ensuring pixel-perfect accuracy at the edges. Then use the fill tool to finish the center
+of the lane line quickly.
+
 Pre-Processing
 ---
 
