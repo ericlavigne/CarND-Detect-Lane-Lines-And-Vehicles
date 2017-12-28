@@ -15,6 +15,10 @@ convolutional neural networks to produce such image masks for other images from
 the video. The process of curating training data and training convolutional
 neural networks will be discussed further later in this document.
 
+See [presentation slides](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles/blob/master/presentation.pptx?raw=true)
+for presentation at
+[Ft Lauderdale Machine Learning Meetup](https://www.meetup.com/Fort-Lauderdale-Machine-Learning-Meetup/events/239613518/).
+
 *Note: Find the latest version of this project on
 [Github](https://github.com/ericlavigne/CarND-Detect-Lane-Lines-And-Vehicles).*
 
